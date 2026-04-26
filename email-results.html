@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecureTrace Dashboard</title>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "Segoe UI", sans-serif;
+}
+
+/* Layout */
+body {
+    display: flex;
+    background: #f5f7fb;
+}
+
+/* Sidebar */
+.sidebar {
+    width: 250px;
+    height: 100vh;
+    background: white;
+    color: black;
+    padding: 20px;
+    position: fixed;
+}
+
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 18px;
+    margin-bottom: 30px;
+}
+
+.menu a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    color: black;
+    text-decoration: none;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    transition: 0.3s;
+}
+
+.menu a:hover {
+    background: #f0f4ff;
+}
+
+.menu a.active {
+    background: #e6f0ff;
+    color: #2b6cff;
+}
+
+/* Main */
+.main {
+    margin-left: 250px;
+    padding: 25px;
+    width: 100%;
+}
+
+/* Header */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+}
+
+/* Cards */
+.cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin-bottom: 25px;
+}
+
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+}
+
+.card h3 {
+    margin-bottom: 10px;
+    font-size: 16px;
+}
+
+.status {
+    font-size: 14px;
+    color: gray;
+}
+
+/* Buttons */
+.actions {
+    margin-bottom: 20px;
+}
+
+button {
+    padding: 10px 15px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    background: #2563eb;
+    color: white;
+}
+
+/* Table */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+th, td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+.badge {
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    color: white;
+}
+
+.phishing { background: #ef4444; }
+.potential { background: #f59e0b; }
+.safe { background: #22c55e; }
+
+/* Responsive */
+@media (max-width: 900px) {
+    .cards {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        width: 200px;
+    }
+
+    .main {
+        margin-left: 200px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+
+    <div class="sidebar-header">
+        <i data-lucide="shield"></i>
+        <strong>SecureTrace</strong>
+    </div>
+
+    <div class="menu">
+        <a href="dashboard.html" class="active">
+            <i data-lucide="home"></i> Dashboard
+        </a>
+
+        <a href="email.html">
+            <i data-lucide="mail"></i> Email Filtering
+        </a>
+
+        <a href="#">
+            <i data-lucide="share-2"></i> Transaction Analysis
+        </a>
+
+        <a href="#">
+            <i data-lucide="file-text"></i> Activity Log
+        </a>
+
+        <a href="#">
+            <i data-lucide="bar-chart"></i> Reports
+        </a>
+    </div>
+
+</div>
+
+<!-- Main -->
+<div class="main">
+
+    <div class="header">
+        <h1>Welcome to SecureTrace Dashboard</h1>
+        <div>Welcome, Analyst 👤</div>
+    </div>
+
+    <!-- Action -->
+    <div class="actions">
+        <button onclick="syncEmails()">Sync Gmail Emails</button>
+    </div>
+
+    <!-- Cards -->
+    <div class="cards">
+        <div class="card">
+            <h3>Phishing Emails</h3>
+            <div class="status">12 detected</div>
+        </div>
+
+        <div class="card">
+            <h3>Potential Phishing</h3>
+            <div class="status">27 flagged</div>
+        </div>
+
+        <div class="card">
+            <h3>Safe Emails</h3>
+            <div class="status">84 verified</div>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <table>
+        <tr>
+            <th>Sender</th>
+            <th>Subject</th>
+            <th>Status</th>
+        </tr>
+
+        <tr>
+            <td>PayPal</td>
+            <td>Suspicious login detected</td>
+            <td><span class="badge phishing">Phishing</span></td>
+        </tr>
+
+        <tr>
+            <td>Amazon</td>
+            <td>Your order receipt</td>
+            <td><span class="badge potential">Potential</span></td>
+        </tr>
+
+        <tr>
+            <td>Google</td>
+            <td>Security alert</td>
+            <td><span class="badge safe">Safe</span></td>
+        </tr>
+    </table>
+
+</div>
+
+<script>
+lucide.createIcons();
+
+// dummy function (connect later to backend)
+async function syncEmails() {
+    alert("Connecting to Gmail API...");
+}
+</script>
+
+</body>
+</html>
