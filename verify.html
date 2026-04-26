@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Email Verification</title>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "Segoe UI", sans-serif;
+}
+
+body {
+    background: linear-gradient(to right, #eef4ff, #f8fbff);
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Card */
+.card {
+    background: #fff;
+    padding: 40px;
+    width: 360px;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+    text-align: center;
+}
+
+.icon-circle {
+    width: 70px;
+    height: 70px;
+    background: #e6efff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+}
+
+h2 {
+    margin-bottom: 10px;
+}
+
+p {
+    color: #666;
+    margin-bottom: 20px;
+}
+
+/* Input */
+input {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    margin-bottom: 15px;
+    font-size: 16px;
+    text-align: center;
+}
+
+/* Button */
+button {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(to right, #2b6cff, #4c8dff);
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+/* Error */
+.error {
+    color: red;
+    margin-top: 10px;
+    font-size: 14px;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+    .card {
+        width: 90%;
+        padding: 25px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+    <div class="icon-circle">
+        <i data-lucide="mail"></i>
+    </div>
+
+    <h2>Email Verification</h2>
+
+    <p id="message"></p>
+
+    <input type="text" id="codeInput" placeholder="Enter 6-digit code" maxlength="6">
+
+    <button onclick="verifyCode()">Verify</button>
+
+    <div class="error" id="error"></div>
+
+</div>
+
+<script>
+lucide.createIcons();
+
+// Show email dynamically
+const email = localStorage.getItem("userEmail");
+document.getElementById("message").innerText =
+    "A verification code has been sent to " + email;
+
+// Only numbers allowed
+const input = document.getElementById("codeInput");
+input.addEventListener("input", function () {
+    this.value = this.value.replace(/[^0-9]/g, "");
+});
+
+// Verify with backend
+async function verifyCode() {
+    const code = input.value;
+
+    if (code.length !== 6) {
+        document.getElementById("error").innerText = "Enter a valid 6-digit code";
+        return;
+    }
+
+    const btn = document.querySelector("button");
+    btn.textContent = "Verifying...";
+    btn.disabled = true;
+
+    try {
+        const res = await fetch("http://localhost:3000/verify-code", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ email, code })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            window.location.href = "email-results.html";
+        } else {
+            document.getElementById("error").innerText = "Invalid code";
+            btn.textContent = "Verify";
+            btn.disabled = false;
+        }
+
+    } catch (err) {
+        document.getElementById("error").innerText = "Server error";
+        btn.textContent = "Verify";
+        btn.disabled = false;
+    }
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Email Filtering</title>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "Segoe UI", sans-serif;
+}
+
+body {
+    display: flex;
+    background: #f5f7fb;
+}
+
+/* Sidebar */
+.sidebar {
+    width: 230px;
+    height: 100vh;
+    background: #fff;
+    padding: 20px;
+    border-right: 1px solid #eee;
+}
+
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 30px;
+}
+
+.menu a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    margin-bottom: 10px;
+    text-decoration: none;
+    color: #333;
+    border-radius: 8px;
+}
+
+.menu a.active {
+    background: #e6f0ff;
+    color: #2b6cff;
+}
+
+/* Main */
+.main {
+    flex: 1;
+    padding: 30px;
+}
+
+/* Header */
+.header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 30px;
+}
+
+/* Title */
+.title {
+    margin-bottom: 20px;
+}
+
+.title p {
+    color: #666;
+}
+
+/* Main Card */
+.connect-card {
+    background: white;
+    border-radius: 12px;
+    padding: 25px;
+    display: flex;
+    gap: 30px;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+}
+
+/* Left Info */
+.info {
+    flex: 1;
+}
+
+.icon-circle {
+    width: 60px;
+    height: 60px;
+    background: #e6efff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 10px;
+}
+
+.info-box {
+    margin-top: 20px;
+    background: #f0f5ff;
+    padding: 15px;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+/* Right Form */
+.form {
+    flex: 1;
+}
+
+.form input, .form select {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 15px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+}
+
+.form button {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(to right, #2b6cff, #4c8dff);
+    color: white;
+    cursor: pointer;
+}
+
+.secure {
+    font-size: 13px;
+    margin-top: 10px;
+    color: #666;
+}
+
+/* Bottom Sections */
+.bottom {
+    display: flex;
+    gap: 20px;
+    margin-top: 25px;
+}
+
+.box {
+    flex: 1;
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+}
+
+/* Steps */
+.step {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.step-number {
+    background: #2b6cff;
+    color: white;
+    width: 25px;
+    height: 25px;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 25px;
+}
+
+/* Security */
+.sec-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+/* MOBILE */
+@media (max-width: 768px) {
+
+    body {
+        flex-direction: column;
+    }
+
+    /* Sidebar */
+    .sidebar {
+        width: 100%;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid #eee;
+    }
+
+    .menu {
+        display: flex;
+        overflow-x: auto;
+        gap: 10px;
+    }
+
+    .menu a {
+        white-space: nowrap;
+    }
+
+    /* Main */
+    .main {
+        padding: 15px;
+    }
+
+    .header {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    /* Connect card becomes vertical */
+    .connect-card {
+        flex-direction: column;
+    }
+
+    /* Bottom sections stack */
+    .bottom {
+        flex-direction: column;
+    }
+
+    .box {
+        width: 100%;
+    }
+
+    input, select {
+        font-size: 14px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+    <div class="sidebar-header">
+        <i data-lucide="shield"></i>
+        <strong>SecureTrace</strong>
+    </div>
+
+    <div class="menu">
+        <a href="dashboard.html">
+            <i data-lucide="home"></i> Dashboard
+        </a>
+
+        <a href="#" class="active">
+            <i data-lucide="mail"></i> Email Filtering
+        </a>
+
+        <a href="#">
+            <i data-lucide="share-2"></i> Transaction Analysis
+        </a>
+
+        <a href="#">
+            <i data-lucide="file-text"></i> Activity Log
+        </a>
+
+        <a href="#">
+            <i data-lucide="bar-chart"></i> Reports
+        </a>
+    </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+    <div class="header">
+        <h2>Email Filtering</h2>
+        <div>Welcome, Analyst 👤</div>
+    </div>
+
+    <div class="title">
+        <p>Connect your email account to analyze incoming emails and detect threats.</p>
+    </div>
+
+    <!-- CONNECT CARD -->
+    <div class="connect-card">
+
+        <!-- LEFT -->
+        <div class="info">
+            <div class="icon-circle">
+                <i data-lucide="mail"></i>
+            </div>
+
+            <h3>Connect Your Email Account</h3><br>
+            <p>Securely connect your email account to start scanning emails.</p>
+
+            <div class="info-box">
+                We do not store your email content. All analysis is secure and private.
+            </div>
+        </div>
+
+        <!-- RIGHT -->
+        <div class="form">
+            <input type="email" placeholder="Enter your email address">
+
+            <select>
+                <option disabled selected>Select Email Provider</option>
+                <option>Gmail</option>
+            </select>
+
+            <button onclick="connectEmail()">Connect Account</button>
+
+            <div class="secure">
+    <i data-lucide="lock"></i>
+    Your connection is encrypted and secure.
+</div>
+        </div>
+
+    </div>
+
+    <!-- BOTTOM -->
+    <div class="bottom">
+
+        <!-- HOW IT WORKS -->
+        <div class="box">
+            <h3>How It Works</h3>
+
+            <div class="step">
+                <div class="step-number">1</div>
+                <div>Connect your account securely</div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">2</div>
+                <div>Email analysis begins</div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">3</div>
+                <div>Threats are detected and flagged</div>
+            </div>
+        </div>
+
+        <!-- SECURITY -->
+        <div class="box">
+            <h3>Security & Privacy</h3>
+
+            <div class="sec-item">
+                <i data-lucide="shield-check"></i>
+                End-to-end encryption
+            </div>
+
+            <div class="sec-item">
+                <i data-lucide="shield-check"></i>
+                No email content stored
+            </div>
+
+            <div class="sec-item">
+                <i data-lucide="shield-check"></i>
+                Secure authentication
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Connecting...';    
+lucide.createIcons();
+async function connectEmail() {
+    const email = document.querySelector("input[type='email']").value;
+
+    if (!email || !email.includes("@")) {
+        alert("Enter a valid email");
+        return;
+    }
+
+    const btn = document.querySelector("button");
+    btn.textContent = "Sending Code...";
+    btn.disabled = true;
+
+    const res = await fetch("http://localhost:3000/send-code", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ email })
+    });
+
+    const data = await res.json();
+
+    if (data.success) {
+        localStorage.setItem("userEmail", email);
+        window.location.href = "verify.html";
+    } else {
+        alert("Failed to send code");
+        btn.textContent = "Connect Account";
+        btn.disabled = false;
+    }
+}
+</script>
+
+</body>
+</html>
