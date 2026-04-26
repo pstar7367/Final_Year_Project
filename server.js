@@ -4,7 +4,11 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: "*",
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type"]
+}));
 app.use(bodyParser.json());
 
 let verificationCodes = {}; // store codes temporarily
@@ -13,8 +17,8 @@ let verificationCodes = {}; // store codes temporarily
 const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-        user: "aruyapeace@gmail.com",
-        pass: "wbmg qmmc sqix ijyj" // NOT your normal password
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
     }
 });
 
@@ -27,7 +31,7 @@ app.post("/send-code", async (req, res) => {
     verificationCodes[email] = code;
 
     const mailOptions = {
-        from: "SecureTrace <aruyapeace@gmail.com>",
+        from: `SecureTrace <${process.env.EMAIL_USER}>`,
         to: email,
         subject: "SecureTrace Verification Code",
         text: `Your verification code is: ${code}`
@@ -37,8 +41,8 @@ app.post("/send-code", async (req, res) => {
         await transporter.sendMail(mailOptions);
         res.json({ success: true });
     } catch (err) {
-        console.log(err);
-        res.json({ success: false });
+        console.log("EMAIL ERROR:", err.message);
+        res.json({ success: false, error: err.message });
     }
 });
 
@@ -54,6 +58,8 @@ app.post("/verify-code", (req, res) => {
     }
 });
 
-app.listen(3000, () => {
-    console.log("Server running on http://localhost:3000");
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log("Server running on port", PORT);
 });

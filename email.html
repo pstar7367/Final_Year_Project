@@ -368,6 +368,8 @@ body {
 </div>
 
 <script>
+const btn = document.querySelector("button");
+
 btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Connecting...';    
 lucide.createIcons();
 async function connectEmail() {
@@ -378,11 +380,10 @@ async function connectEmail() {
         return;
     }
 
-    const btn = document.querySelector("button");
     btn.textContent = "Sending Code...";
     btn.disabled = true;
 
-    const res = await fetch("http://localhost:3000/send-code", {
+    const res = await fetch("https://your-render-url.onrender.com/send-code", {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
