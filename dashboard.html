@@ -17,13 +17,14 @@
 
 body {
     display: flex;
+    min-height: 100vh;
     background: #f5f7fb;
 }
 
 /* Sidebar */
 .sidebar {
     width: 230px;
-    height: 100vh;
+    min-height: 100vh; /* ✅ ensures full height */
     background: #fff;
     padding: 20px;
     border-right: 1px solid #eee;
@@ -123,17 +124,16 @@ body {
     border-radius: 8px;
     text-align: center;
 }
+
 /* MOBILE */
 @media (max-width: 768px) {
-
     body {
         flex-direction: column;
     }
 
-    /* Hide sidebar */
     .sidebar {
         width: 100%;
-        height: auto;
+        min-height: auto;
         border-right: none;
         border-bottom: 1px solid #eee;
     }
@@ -148,7 +148,6 @@ body {
         white-space: nowrap;
     }
 
-    /* Main */
     .main {
         padding: 15px;
     }
@@ -158,16 +157,10 @@ body {
         gap: 10px;
     }
 
-    /* Cards stack */
     .cards {
         flex-direction: column;
     }
 
-    .card {
-        width: 100%;
-    }
-
-    /* Stats stack */
     .stats {
         flex-direction: column;
     }
@@ -179,7 +172,6 @@ body {
 
 <!-- Sidebar -->
 <div class="sidebar">
-
     <div class="sidebar-header">
         <i data-lucide="shield"></i>
         <strong>SecureTrace</strong>
@@ -195,14 +187,14 @@ body {
         </a>
 
         <a href="#">
-            <i data-lucide="share-2"></i> Transaction Analysis
+            <i data-lucide="activity"></i> Transaction Analysis
         </a>
 
-        <a href="#">
+        <a href="activity-log.html">
             <i data-lucide="file-text"></i> Activity Log
         </a>
 
-        <a href="#">
+        <a href="reports.html">
             <i data-lucide="bar-chart"></i> Reports
         </a>
     </div>
@@ -216,6 +208,7 @@ body {
         <div>Welcome, Analyst 👤</div>
     </div>
 
+    <!-- CARDS -->
     <div class="cards">
 
         <div class="card">
@@ -233,32 +226,28 @@ body {
             </div>
             <h3>Transaction Analysis</h3><br>
             <p>Analyze transactions and trace crypto assets.</p><br>
-            <button>Open Transaction Analysis</button>
+            <button onclick="openTransaction()">Open Transaction Analysis</button>
         </div>
 
     </div>
 
+    <!-- OVERVIEW -->
     <div class="overview">
         <h3>System Overview</h3>
 
         <div class="stats">
             <div class="stat">
-                <h2>0</h2>
+                <h2 id="emails">0</h2>
                 <p>Emails Analyzed</p>
             </div>
 
             <div class="stat">
-                <h2>0</h2>
+                <h2 id="transactions">0</h2>
                 <p>Transactions Traced</p>
             </div>
 
             <div class="stat">
-                <h2>0</h2>
-                <p>Alerts Generated</p>
-            </div>
-
-            <div class="stat">
-                <h2>0</h2>
+                <h2 id="reports">0</h2>
                 <p>Reports Generated</p>
             </div>
         </div>
@@ -268,9 +257,96 @@ body {
 
 <script>
 lucide.createIcons();
+
+/* ===== STORAGE ===== */
+function initStats() {
+    if (!localStorage.getItem("stats")) {
+        localStorage.setItem("stats", JSON.stringify({
+            emails: 0,
+            transactions: 0,
+            alerts: 0,
+            reports: 0
+        }));
+    }
+}
+
+function getStats() {
+    return JSON.parse(localStorage.getItem("stats"));
+}
+
+function setStats(data) {
+    localStorage.setItem("stats", JSON.stringify(data));
+}
+
+/* ===== UPDATE UI ===== */
+function updateUI() {
+    const stats = getStats();
+
+    document.getElementById("emails").innerText = stats.emails;
+    document.getElementById("transactions").innerText = stats.transactions;
+    document.getElementById("reports").innerText = stats.reports;
+}
+
+/* ===== ACTIONS ===== */
 function goToEmail() {
+    let stats = getStats();
+
+    stats.emails += 5;
+    stats.alerts += Math.floor(Math.random() * 2);
+
+    setStats(stats);
+
     window.location.href = "email.html";
 }
+
+function openTransaction() {
+    let stats = getStats();
+
+    stats.transactions += 1;
+
+    setStats(stats);
+
+    alert("Transaction module will be connected soon.");
+    const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
+
+    logs.unshift({
+        message: "Opened Transaction Analysis",
+        time: new Date().toLocaleString()
+    });
+
+    localStorage.setItem("activityLogs", JSON.stringify(logs));
+
+    // 🔗 your external link
+    window.location.href = "https://your-transaction-tool-link.com";
+}
+
+/* ===== INIT ===== */
+window.onload = function () {
+    initStats();
+    updateUI();
+};
+
+// 🧠 GLOBAL ACTIVITY LOGGER
+function logActivity(message) {
+    const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
+
+    logs.unshift({
+        message: message,
+        time: new Date().toLocaleString()
+    });
+
+    // Keep only last 100 logs
+    if (logs.length > 100) logs.pop();
+
+    localStorage.setItem("activityLogs", JSON.stringify(logs));
+}
+
+window.onload = function () {
+    initStats();
+    updateUI();
+
+    logActivity("Visited dashboard");
+};
 </script>
 
 </body>

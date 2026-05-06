@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SecureTrace Dashboard</title>
+<title>Email Scan Results</title>
 
 <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -15,56 +15,9 @@
     font-family: "Segoe UI", sans-serif;
 }
 
-/* Layout */
 body {
-    display: flex;
     background: #f5f7fb;
-}
-
-/* Sidebar */
-.sidebar {
-    width: 250px;
-    height: 100vh;
-    background: white;
-    color: black;
     padding: 20px;
-    position: fixed;
-}
-
-.sidebar-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 18px;
-    margin-bottom: 30px;
-}
-
-.menu a {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px;
-    color: black;
-    text-decoration: none;
-    border-radius: 8px;
-    margin-bottom: 10px;
-    transition: 0.3s;
-}
-
-.menu a:hover {
-    background: #f0f4ff;
-}
-
-.menu a.active {
-    background: #e6f0ff;
-    color: #2b6cff;
-}
-
-/* Main */
-.main {
-    margin-left: 250px;
-    padding: 25px;
-    width: 100%;
 }
 
 /* Header */
@@ -72,192 +25,353 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 25px;
-}
-
-/* Cards */
-.cards {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 15px;
-    margin-bottom: 25px;
-}
-
-.card {
-    background: white;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.05);
-}
-
-.card h3 {
-    margin-bottom: 10px;
-    font-size: 16px;
-}
-
-.status {
-    font-size: 14px;
-    color: gray;
-}
-
-/* Buttons */
-.actions {
     margin-bottom: 20px;
+}
+
+.header h2 {
+    color: #2b2b2b;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 button {
     padding: 10px 15px;
     border: none;
     border-radius: 8px;
-    cursor: pointer;
-    background: #2563eb;
+    background: #2b6cff;
     color: white;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Card */
+.card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.05);
 }
 
 /* Table */
 table {
     width: 100%;
     border-collapse: collapse;
-    background: white;
-    border-radius: 12px;
-    overflow: hidden;
+    table-layout: fixed;
 }
 
 th, td {
     padding: 12px;
     text-align: left;
+}
+
+td {
+    word-break: break-word;
+    max-width: 250px;
+}
+
+th {
+    background: #f0f4ff;
+    color: #333;
+}
+
+tr {
     border-bottom: 1px solid #eee;
 }
 
-.badge {
-    padding: 5px 10px;
-    border-radius: 20px;
-    font-size: 12px;
-    color: white;
-}
+.status-safe { color: #52c41a; font-weight: 600; }
+.status-warning { color: #faad14; font-weight: 600; }
+.status-danger { color: #ff4d4f; font-weight: 600; }
 
-.phishing { background: #ef4444; }
-.potential { background: #f59e0b; }
-.safe { background: #22c55e; }
-
-/* Responsive */
-@media (max-width: 900px) {
-    .cards {
-        grid-template-columns: 1fr;
-    }
-
-    .sidebar {
-        width: 200px;
-    }
-
-    .main {
-        margin-left: 200px;
-    }
+.center {
+    text-align: center;
+    padding: 20px;
+    color: #666;
 }
 </style>
 </head>
 
 <body>
 
-<!-- Sidebar -->
-<div class="sidebar">
+<div class="header">
+    <h2>
+        <i data-lucide="bar-chart-3"></i>
+        Email Scan Results (<span id="totalCount">0</span>)
+    </h2>
 
-    <div class="sidebar-header">
-        <i data-lucide="shield"></i>
-        <strong>SecureTrace</strong>
+    <div>
+        <button onclick="loadResults()">
+            <i data-lucide="refresh-cw"></i>
+            Refresh
+        </button>
+
+        <button onclick="goDashboard()">
+            <i data-lucide="home"></i>
+            Go to Dashboard
+        </button>
     </div>
-
-    <div class="menu">
-        <a href="dashboard.html" class="active">
-            <i data-lucide="home"></i> Dashboard
-        </a>
-
-        <a href="email.html">
-            <i data-lucide="mail"></i> Email Filtering
-        </a>
-
-        <a href="#">
-            <i data-lucide="share-2"></i> Transaction Analysis
-        </a>
-
-        <a href="#">
-            <i data-lucide="file-text"></i> Activity Log
-        </a>
-
-        <a href="#">
-            <i data-lucide="bar-chart"></i> Reports
-        </a>
-    </div>
-
 </div>
 
-<!-- Main -->
-<div class="main">
+<div class="card">
+<table>
+<thead>
+<tr>
+<th>Date</th>
+<th>From</th>
+<th>Subject</th>
+<th>Category</th>
+<th>Risk</th>
+<th>Confidence</th>
+<th>URLs</th>
+<th>Thread ID</th>
+<th>Message ID</th>
+</tr>
+</thead>
 
-    <div class="header">
-        <h1>Welcome to SecureTrace Dashboard</h1>
-        <div>Welcome, Analyst 👤</div>
-    </div>
-
-    <!-- Action -->
-    <div class="actions">
-        <button onclick="syncEmails()">Sync Gmail Emails</button>
-    </div>
-
-    <!-- Cards -->
-    <div class="cards">
-        <div class="card">
-            <h3>Phishing Emails</h3>
-            <div class="status">12 detected</div>
-        </div>
-
-        <div class="card">
-            <h3>Potential Phishing</h3>
-            <div class="status">27 flagged</div>
-        </div>
-
-        <div class="card">
-            <h3>Safe Emails</h3>
-            <div class="status">84 verified</div>
-        </div>
-    </div>
-
-    <!-- Table -->
-    <table>
-        <tr>
-            <th>Sender</th>
-            <th>Subject</th>
-            <th>Status</th>
-        </tr>
-
-        <tr>
-            <td>PayPal</td>
-            <td>Suspicious login detected</td>
-            <td><span class="badge phishing">Phishing</span></td>
-        </tr>
-
-        <tr>
-            <td>Amazon</td>
-            <td>Your order receipt</td>
-            <td><span class="badge potential">Potential</span></td>
-        </tr>
-
-        <tr>
-            <td>Google</td>
-            <td>Security alert</td>
-            <td><span class="badge safe">Safe</span></td>
-        </tr>
-    </table>
-
+<tbody id="resultsTable">
+<tr>
+<td colspan="9" class="center">Loading...</td>
+</tr>
+</tbody>
+</table>
 </div>
 
 <script>
 lucide.createIcons();
+/* ================= ACTIVITY LOGGER ================= */
+function logActivity(message) {
+    const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
 
-// dummy function (connect later to backend)
-async function syncEmails() {
-    alert("Connecting to Gmail API...");
+    logs.unshift({
+        message: message,
+        time: new Date().toLocaleString()
+    });
+
+    if (logs.length > 100) logs.pop();
+
+    localStorage.setItem("activityLogs", JSON.stringify(logs));
 }
+
+function initStats() {
+    if (!localStorage.getItem("stats")) {
+        localStorage.setItem("stats", JSON.stringify({
+            emails: 0,
+            transactions: 0,
+            alerts: 0,
+            reports: 0,
+            phishing: 0,
+            potential: 0,
+            dailyHistory: [0, 0, 0, 0, 0]
+        }));
+    }
+}
+
+function getStats() {
+    initStats();
+    const stats = JSON.parse(localStorage.getItem("stats"));
+    stats.emails = stats.emails || 0;
+    stats.transactions = stats.transactions || 0;
+    stats.alerts = stats.alerts || 0;
+    stats.reports = stats.reports || 0;
+    stats.phishing = stats.phishing !== undefined ? stats.phishing : stats.alerts;
+    stats.potential = stats.potential !== undefined ? stats.potential : 0;
+    let needsSave = false;
+    if (!Array.isArray(stats.dailyHistory) || stats.dailyHistory.length !== 5) {
+        const history = [0, 0, 0, 0, 0];
+        if (stats.dailyEmails !== undefined) {
+            const dayIndex = new Date().getDay();
+            const bucket = dayIndex >= 1 && dayIndex <= 5 ? dayIndex - 1 : 4;
+            history[bucket] = stats.dailyEmails;
+        }
+        stats.dailyHistory = history;
+        needsSave = true;
+    }
+    if (needsSave) {
+        setStats(stats);
+    }
+    return stats;
+}
+
+function setStats(data) {
+    localStorage.setItem("stats", JSON.stringify(data));
+}
+
+function saveRecentAnalysis(records) {
+    localStorage.setItem('recentAnalysis', JSON.stringify(records));
+}
+
+function getRecentAnalysis() {
+    return JSON.parse(localStorage.getItem('recentAnalysis')) || [];
+}
+
+function addRecentAnalysis(record) {
+    const records = getRecentAnalysis();
+    records.unshift(record);
+    if (records.length > 10) records.pop();
+    saveRecentAnalysis(records);
+}
+
+function updateScanStats(emailCount, phishingCount, potentialCount) {
+    initStats();
+    const stats = getStats();
+    stats.emails += emailCount;
+    stats.phishing += phishingCount;
+    stats.potential += potentialCount;
+    const dayIndex = new Date().getDay();
+    const bucket = dayIndex >= 1 && dayIndex <= 5 ? dayIndex - 1 : 4;
+    if (!Array.isArray(stats.dailyHistory)) {
+        stats.dailyHistory = [0, 0, 0, 0, 0];
+    }
+    stats.dailyHistory[bucket] = (stats.dailyHistory[bucket] || 0) + emailCount;
+    stats.alerts = stats.phishing + stats.potential;
+    setStats(stats);
+    logActivity(`Updated stats: +${emailCount} emails, +${phishingCount} phishing, +${potentialCount} potential`);
+}
+
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzPxR7fokp5FQr5YDmJmbqOvRaF3h6gyL-CxIWysyvTBj_ncCewz44oXy3ARUMHXkrxhw/exec";
+
+let loading = false;
+let timeoutRef = null;
+let lastCount = 0;
+
+// 🚀 LOAD RESULTS
+function loadResults() {
+    logActivity("Started email scan");
+    logActivity("Manual refresh triggered");
+    if (loading) return;
+    loading = true;
+
+    logActivity("Started email scan");
+
+    const table = document.getElementById("resultsTable");
+
+    table.innerHTML = `
+        <tr>
+            <td colspan="9" class="center">Loading...</td>
+        </tr>
+    `;
+
+    const oldScript = document.getElementById("jsonpScript");
+    if (oldScript) oldScript.remove();
+
+    const script = document.createElement("script");
+    script.id = "jsonpScript";
+
+    script.src = SCRIPT_URL + "?action=scan&callback=handleData&t=" + Date.now();
+
+    script.onerror = function () {
+        showError("Failed to load data");
+    };
+
+    timeoutRef = setTimeout(() => {
+        showError("Still loading... try refresh");
+    }, 12000);
+
+    document.body.appendChild(script);
+}
+
+// ✅ HANDLE DATA
+function handleData(data) {
+    const phishingCount = data.filter(e => e.Category === "PHISHING").length;
+    const potentialCount = data.filter(e => e.Category === "POTENTIAL_PHISHING").length;
+    const alertCount = phishingCount + potentialCount;
+    logActivity(`Scanned ${data.length} emails, detected ${alertCount} alerts`);
+    clearTimeout(timeoutRef);
+
+    updateScanStats(data.length, phishingCount, potentialCount);
+    addRecentAnalysis({
+        date: new Date().toLocaleString(),
+        sender: 'Gmail scan',
+        subject: `${data.length} emails scanned`,
+        status: alertCount > 0 ? `🚨 ${alertCount} alerts` : '✅ Safe'
+    });
+    document.getElementById("totalCount").innerText = data.length;
+
+    // 🔔 Notify only if NEW scan result comes in
+    if (data.length > lastCount) {
+        alert("New emails detected");
+        logActivity(`New emails detected: +${data.length - lastCount}`);
+    }
+    lastCount = data.length;
+
+    const table = document.getElementById("resultsTable");
+
+    if (!data || data.length === 0) {
+        table.innerHTML = `
+            <tr>
+                <td colspan="9" class="center">
+                    No new emails
+                </td>
+            </tr>
+        `;
+        loading = false;
+        return;
+    }
+
+    table.innerHTML = "";
+
+    data.slice(-50).reverse().forEach(email => {
+
+        let statusClass = "status-safe";
+
+        if (email.Category === "PHISHING") statusClass = "status-danger";
+        else if (email.Category === "POTENTIAL_PHISHING") statusClass = "status-warning";
+
+        const row = `
+<tr>
+<td>${email.Date || "-"}</td>
+<td>${email.From || "-"}</td>
+<td>${email.Subject || "-"}</td>
+<td class="${statusClass}">${email.Category || "-"}</td>
+<td>${email.Risk || "-"}</td>
+<td>${email.Confidence || "-"}</td>
+<td>${formatUrls(email.URLs)}</td>
+<td>${email.Thread_ID || "-"}</td>
+<td>${email.Message_ID || "-"}</td>
+</tr>
+`;
+
+        table.innerHTML += row;
+    });
+
+    lucide.createIcons();
+    loading = false;
+}
+
+// 🔗 FORMAT URLS (clean + clickable)
+function formatUrls(urls) {
+    if (!urls) return "-";
+
+    return urls.split(",").map(url => {
+        url = url.trim();
+        return `<a href="${url}" target="_blank">${url}</a>`;
+    }).join("<br>");
+}
+
+// ❌ ERROR DISPLAY
+function showError(message) {
+    const table = document.getElementById("resultsTable");
+
+    table.innerHTML = `
+        <tr>
+            <td colspan="9" class="center" style="color:red;">
+                ${message}
+            </td>
+        </tr>
+    `;
+
+    loading = false;
+}
+
+// 🌐 GO TO LIVE DASHBOARD (IMPORTANT)
+function goDashboard() {
+    window.open("dashboard.html", "_top");
+}
+
+// 🚀 INITIAL LOAD
+loadResults();
 </script>
 
 </body>

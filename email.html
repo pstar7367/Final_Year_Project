@@ -56,7 +56,6 @@ body {
     background: #f0f4ff;
 }
 
-
 /* Main */
 .main {
     flex: 1;
@@ -79,7 +78,7 @@ body {
     color: #666;
 }
 
-/* Main Card */
+/* Card */
 .connect-card {
     background: white;
     border-radius: 12px;
@@ -89,7 +88,7 @@ body {
     box-shadow: 0 10px 20px rgba(0,0,0,0.05);
 }
 
-/* Left Info */
+/* Left */
 .info {
     flex: 1;
 }
@@ -113,20 +112,37 @@ body {
     font-size: 14px;
 }
 
-/* Right Form */
+/* Right */
 .form {
     flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.form input, .form select {
+/* Connect Box */
+.connect-box {
+    text-align: center;
+    background: #f9fbff;
+    padding: 25px;
+    border-radius: 12px;
     width: 100%;
-    padding: 12px;
-    margin-bottom: 15px;
-    border-radius: 8px;
-    border: 1px solid #ccc;
 }
 
-.form button {
+.connect-box i {
+    margin-bottom: 10px;
+}
+
+.connect-box h3 {
+    margin-bottom: 10px;
+}
+
+.connect-box p {
+    color: #666;
+    margin-bottom: 20px;
+}
+
+.connect-box button {
     width: 100%;
     padding: 12px;
     border: none;
@@ -136,13 +152,17 @@ body {
     cursor: pointer;
 }
 
+/* Secure text */
 .secure {
     font-size: 13px;
-    margin-top: 10px;
+    margin-top: 15px;
     color: #666;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
-/* Bottom Sections */
+/* Bottom */
 .bottom {
     display: flex;
     gap: 20px;
@@ -181,6 +201,7 @@ body {
     margin-bottom: 10px;
 }
 
+/* Loader */
 .spin {
     animation: spin 1s linear infinite;
 }
@@ -189,18 +210,14 @@ body {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
 }
-/* MOBILE */
+
+/* Mobile */
 @media (max-width: 768px) {
+    body { flex-direction: column; }
 
-    body {
-        flex-direction: column;
-    }
-
-    /* Sidebar */
     .sidebar {
         width: 100%;
         height: auto;
-        border-right: none;
         border-bottom: 1px solid #eee;
     }
 
@@ -210,37 +227,11 @@ body {
         gap: 10px;
     }
 
-    .menu a {
-        white-space: nowrap;
-    }
+    .main { padding: 15px; }
 
-    /* Main */
-    .main {
-        padding: 15px;
-    }
+    .connect-card { flex-direction: column; }
 
-    .header {
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    /* Connect card becomes vertical */
-    .connect-card {
-        flex-direction: column;
-    }
-
-    /* Bottom sections stack */
-    .bottom {
-        flex-direction: column;
-    }
-
-    .box {
-        width: 100%;
-    }
-
-    input, select {
-        font-size: 14px;
-    }
+    .bottom { flex-direction: column; }
 }
 </style>
 </head>
@@ -259,7 +250,7 @@ body {
             <i data-lucide="home"></i> Dashboard
         </a>
 
-        <a href="#" class="active">
+        <a href="email.html" class="active">
             <i data-lucide="mail"></i> Email Filtering
         </a>
 
@@ -267,11 +258,11 @@ body {
             <i data-lucide="share-2"></i> Transaction Analysis
         </a>
 
-        <a href="#">
+        <a href="activity-log.html">
             <i data-lucide="file-text"></i> Activity Log
         </a>
 
-        <a href="#">
+        <a href="reports.html">
             <i data-lucide="bar-chart"></i> Reports
         </a>
     </div>
@@ -286,7 +277,7 @@ body {
     </div>
 
     <div class="title">
-        <p>Connect your email account to analyze incoming emails and detect threats.</p>
+        <p>Connect your Gmail account to analyze emails and detect phishing threats.</p>
     </div>
 
     <!-- CONNECT CARD -->
@@ -298,8 +289,8 @@ body {
                 <i data-lucide="mail"></i>
             </div>
 
-            <h3>Connect Your Email Account</h3><br>
-            <p>Securely connect your email account to start scanning emails.</p>
+            <h3>Connect Your Gmail</h3><br>
+            <p>Securely connect your Gmail account to start AI-powered phishing detection.</p>
 
             <div class="info-box">
                 We do not store your email content. All analysis is secure and private.
@@ -308,19 +299,20 @@ body {
 
         <!-- RIGHT -->
         <div class="form">
-            <input type="email" placeholder="Enter your email address">
+            <div>
+                <div class="connect-box">
+                    <i data-lucide="mail"></i>
+                    <h3>Connect Gmail Account</h3>
+                    <p>Authorize access securely via Google to begin scanning emails.</p>
 
-            <select>
-                <option disabled selected>Select Email Provider</option>
-                <option>Gmail</option>
-            </select>
+                    <button onclick="connectGmail()">Connect Gmail</button>
+                </div>
 
-            <button onclick="connectEmail()">Connect Account</button>
-
-            <div class="secure">
-    <i data-lucide="lock"></i>
-    Your connection is encrypted and secure.
-</div>
+                <div class="secure">
+                    <i data-lucide="lock"></i>
+                    Your connection is encrypted and secure.
+                </div>
+            </div>
         </div>
 
     </div>
@@ -328,27 +320,25 @@ body {
     <!-- BOTTOM -->
     <div class="bottom">
 
-        <!-- HOW IT WORKS -->
         <div class="box">
             <h3>How It Works</h3>
 
             <div class="step">
                 <div class="step-number">1</div>
-                <div>Connect your account securely</div>
+                <div>Connect Gmail securely</div>
             </div>
 
             <div class="step">
                 <div class="step-number">2</div>
-                <div>Email analysis begins</div>
+                <div>Emails are analyzed using AI</div>
             </div>
 
             <div class="step">
                 <div class="step-number">3</div>
-                <div>Threats are detected and flagged</div>
+                <div>Threats are detected and reported</div>
             </div>
         </div>
 
-        <!-- SECURITY -->
         <div class="box">
             <h3>Security & Privacy</h3>
 
@@ -364,7 +354,7 @@ body {
 
             <div class="sec-item">
                 <i data-lucide="shield-check"></i>
-                Secure authentication
+                Secure Google authentication
             </div>
         </div>
 
@@ -373,41 +363,131 @@ body {
 </div>
 
 <script>
-const btn = document.querySelector("button");
-
-btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Connecting...';    
 lucide.createIcons();
-async function connectEmail() {
-    const email = document.querySelector("input[type='email']").value;
 
-    if (!email || !email.includes("@")) {
-        alert("Enter a valid email");
-        return;
-    }
+/* ================= ACTIVITY LOGGER ================= */
+function logActivity(message) {
+    const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
 
-    btn.textContent = "Sending Code...";
-    btn.disabled = true;
-
-    const res = await fetch("https://final-year-project-eobc.onrender.com/send-code", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ email })
+    logs.unshift({
+        message: message,
+        time: new Date().toLocaleString()
     });
 
-    const data = await res.json();
+    if (logs.length > 100) logs.pop();
 
-    if (data.success) {
-        localStorage.setItem("userEmail", email);
-        window.location.href = "verify.html";
-    } else {
-        alert("Failed to send code");
-        btn.textContent = "Connect Account";
-        btn.disabled = false;
+    localStorage.setItem("activityLogs", JSON.stringify(logs));
+}
+
+/* ================= STATS MANAGEMENT ================= */
+function initStats() {
+    if (!localStorage.getItem("stats")) {
+        setStats({
+            emails: 25,
+            transactions: 0,
+            alerts: 6,
+            reports: 0,
+            phishing: 0,
+            potential: 0
+        });
     }
 }
-</script>
 
+function getStats() {
+    let stats = JSON.parse(localStorage.getItem("stats"));
+    if (!stats) {
+        stats = { emails: 0, transactions: 0, alerts: 0, reports: 0, phishing: 0, potential: 0 };
+        setStats(stats);
+    }
+    stats.emails = stats.emails || 0;
+    stats.transactions = stats.transactions || 0;
+    stats.alerts = stats.alerts || 0;
+    stats.reports = stats.reports || 0;
+    stats.phishing = stats.phishing !== undefined ? stats.phishing : stats.alerts;
+    stats.potential = stats.potential !== undefined ? stats.potential : 0;
+    return stats;
+}
+
+function setStats(data) {
+    localStorage.setItem("stats", JSON.stringify(data));
+}
+
+function saveRecentAnalysis(records) {
+    localStorage.setItem('recentAnalysis', JSON.stringify(records));
+}
+
+function getRecentAnalysis() {
+    return JSON.parse(localStorage.getItem('recentAnalysis')) || [];
+}
+
+function addRecentAnalysis(record) {
+    const records = getRecentAnalysis();
+    records.unshift(record);
+    if (records.length > 10) records.pop();
+    saveRecentAnalysis(records);
+}
+
+function recordAnalysis(sender, subject, status, alertCount = 0) {
+    initStats();
+    const stats = getStats();
+    stats.emails += 5;
+    stats.alerts += alertCount;
+    setStats(stats);
+
+    addRecentAnalysis({
+        date: 'Today',
+        sender,
+        subject,
+        status
+    });
+
+    logActivity(`Email analysis recorded: ${status}`);
+}
+
+function generateAlert(threatType) {
+    const stats = getStats();
+    stats.alerts = (stats.alerts || 0) + 1;
+
+    if (threatType === 'phishing') {
+        stats.phishing = (stats.phishing || 0) + 1;
+    } else if (threatType === 'potential') {
+        stats.potential = (stats.potential || 0) + 1;
+    }
+
+    setStats(stats);
+
+    addRecentAnalysis({
+        date: 'Today',
+        sender: 'live@securetrace',
+        subject: 'Email threat detected',
+        status: '🚨 Alert'
+    });
+
+    logActivity(`Alert generated: ${threatType} threat detected`);
+}
+
+/* ================= CONNECT GMAIL ================= */
+function connectGmail() {
+    initStats();
+    recordAnalysis('live@securetrace', 'Gmail scan completed', '✅ Safe', 0);
+
+    const btn = document.querySelector("button");
+    btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Connecting securely via Google...';
+    btn.disabled = true;
+    lucide.createIcons();
+
+    // ✅ LOG BEFORE REDIRECT
+    logActivity("Started Gmail connection");
+
+    const scriptURL = "https://script.google.com/macros/s/AKfycbzPxR7fokp5FQr5YDmJmbqOvRaF3h6gyL-CxIWysyvTBj_ncCewz44oXy3ARUMHXkrxhw/exec";
+
+    window.location.href = scriptURL;
+}
+
+/* ================= PAGE LOAD ================= */
+window.onload = function () {
+    logActivity("Visited Email Filtering page");
+};
+</script>
 </body>
 </html>

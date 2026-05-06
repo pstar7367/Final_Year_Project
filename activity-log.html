@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Activity Log</title>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "Segoe UI", sans-serif;
+}
+
+body {
+    display: flex;
+    background: #f5f7fb;
+}
+
+/* ===== SIDEBAR ===== */
+.sidebar {
+    width: 230px;
+    height: 100vh;
+    background: #fff;
+    padding: 20px;
+    border-right: 1px solid #eee;
+}
+
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 30px;
+}
+
+.menu a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    margin-bottom: 10px;
+    text-decoration: none;
+    color: #333;
+    border-radius: 8px;
+}
+
+.menu a.active {
+    background: #e6f0ff;
+    color: #2b6cff;
+}
+
+.menu a:hover {
+    background: #f0f4ff;
+}
+
+/* ===== MAIN ===== */
+.main {
+    flex: 1;
+    padding: 30px;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+
+.header h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* ===== CARD ===== */
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+}
+
+/* ===== LOG ITEMS ===== */
+.log-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 14px;
+    border-bottom: 1px solid #eee;
+}
+
+.log-text {
+    font-weight: 500;
+}
+
+.log-time {
+    color: #888;
+    font-size: 13px;
+}
+
+/* MOBILE */
+@media (max-width: 768px) {
+    body { flex-direction: column; }
+
+    .sidebar {
+        width: 100%;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid #eee;
+    }
+
+    .menu {
+        display: flex;
+        overflow-x: auto;
+        gap: 10px;
+    }
+
+    .main {
+        padding: 15px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<!-- ===== SIDEBAR ===== -->
+<div class="sidebar">
+
+    <div class="sidebar-header">
+        <i data-lucide="shield"></i>
+        <strong>SecureTrace</strong>
+    </div>
+
+    <div class="menu">
+        <a href="dashboard.html">
+            <i data-lucide="home"></i> Dashboard
+        </a>
+
+        <a href="email.html">
+            <i data-lucide="mail"></i> Email Filtering
+        </a>
+
+        <a href="#">
+            <i data-lucide="activity"></i> Transaction Analysis
+        </a>
+
+        <a href="activity-log.html" class="active">
+            <i data-lucide="file-text"></i> Activity Log
+        </a>
+
+        <a href="reports.html">
+            <i data-lucide="bar-chart"></i> Reports
+        </a>
+    </div>
+
+</div>
+
+<!-- ===== MAIN ===== -->
+<div class="main">
+
+    <div class="header">
+        <h2>
+            <i data-lucide="file-text"></i>
+            Activity Log
+        </h2>
+
+        <button onclick="clearLogs()" style="padding:8px 12px; border:none; background:#ff4d4f; color:white; border-radius:6px;">
+            <i data-lucide="trash-2"></i> Clear
+        </button>
+    </div>
+
+    <div class="card" id="logContainer">
+        Loading logs...
+    </div>
+
+</div>
+
+<script>
+lucide.createIcons();
+
+// 📥 LOAD LOGS
+function loadLogs() {
+    const container = document.getElementById("logContainer");
+    const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
+
+    if (logs.length === 0) {
+        container.innerHTML = "No activity yet";
+        return;
+    }
+
+    container.innerHTML = "";
+
+    logs.forEach(log => {
+
+        const item = `
+        <div class="log-item">
+            <div class="log-text">${log.message}</div>
+            <div class="log-time">${log.time}</div>
+        </div>
+        `;
+
+        container.innerHTML += item;
+    });
+
+    lucide.createIcons();
+}
+
+// 🗑️ CLEAR LOGS
+function clearLogs() {
+    localStorage.removeItem("activityLogs");
+    loadLogs();
+}
+
+// 🔄 AUTO REFRESH
+setInterval(loadLogs, 3000);
+
+// 🚀 INIT
+loadLogs();
+</script>
+
+</body>
+</html>
