@@ -154,6 +154,60 @@ body {
     border-radius: 2px;
 }
 
+/* Model Performance */
+.performance-box {
+    margin-top: 25px;
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+}
+
+.chart-box.full-width {
+    flex-basis: 100%;
+}
+
+.performance-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
+    gap: 12px;
+    margin-top: 15px;
+}
+
+.metric-card {
+    background: #f8faff;
+    border-radius: 8px;
+    padding: 14px;
+    text-align: center;
+}
+
+.metric-card h4 {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 6px;
+}
+
+.metric-card strong {
+    color: #222;
+    font-size: 24px;
+}
+
+.matrix-wrap {
+    margin-top: 18px;
+    overflow-x: auto;
+}
+
+.matrix-table th,
+.matrix-table td {
+    text-align: center;
+}
+
+.metric-note {
+    color: #666;
+    font-size: 13px;
+    margin-top: 12px;
+}
+
 /* Table */
 .table-box {
     margin-top: 25px;
@@ -181,6 +235,7 @@ th, td {
     .sidebar { width: 100%; height: auto; }
     .summary { flex-direction: column; }
     .charts { flex-direction: column; }
+    .performance-grid { grid-template-columns: repeat(2, 1fr); }
     .table-box table {
         width: 100%;
         display: block;
@@ -251,6 +306,44 @@ th, td {
 
     <br><hr><br>
 
+    <!-- MODEL PERFORMANCE -->
+    <h2>Model Performance</h2>
+    <ul style="line-height:1.8;">
+        <li><strong>Evaluated Emails:</strong> <span id="pdfEvaluated">0</span></li>
+        <li><strong>True Positives:</strong> <span id="pdfTp">0</span></li>
+        <li><strong>True Negatives:</strong> <span id="pdfTn">0</span></li>
+        <li><strong>False Positives:</strong> <span id="pdfFp">0</span></li>
+        <li><strong>False Negatives:</strong> <span id="pdfFn">0</span></li>
+        <li><strong>Accuracy:</strong> <span id="pdfAccuracy">0%</span></li>
+        <li><strong>Precision:</strong> <span id="pdfPrecision">0%</span></li>
+        <li><strong>Recall:</strong> <span id="pdfRecall">0%</span></li>
+        <li><strong>F1 Score:</strong> <span id="pdfF1">0%</span></li>
+    </ul>
+
+    <table border="1" cellspacing="0" cellpadding="8" width="100%">
+        <thead>
+            <tr>
+                <th></th>
+                <th>Actual Phishing</th>
+                <th>Actual Safe</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <th>Predicted Phishing</th>
+                <td id="pdfMatrixTp">0</td>
+                <td id="pdfMatrixFp">0</td>
+            </tr>
+            <tr>
+                <th>Predicted Safe</th>
+                <td id="pdfMatrixFn">0</td>
+                <td id="pdfMatrixTn">0</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <br><hr><br>
+
     <!-- PIE -->
     <h2>Threat Distribution</h2>
     <canvas id="pdfPie" style="max-width:500px;"></canvas>
@@ -260,6 +353,12 @@ th, td {
     <!-- BAR -->
     <h2>Email Analysis Trend</h2>
     <canvas id="pdfBar" style="max-width:500px;"></canvas>
+
+    <br><hr><br>
+
+    <!-- PERFORMANCE CHART -->
+    <h2>Performance Metrics</h2>
+    <canvas id="pdfPerformanceChart" style="max-width:500px;"></canvas>
 
     <br><hr><br>
 
@@ -303,9 +402,15 @@ th, td {
             <i data-lucide="bar-chart"></i>
             <h2>Security Report</h2>
         </div>
-        <button class="download-btn" onclick="downloadPDF()">
-            <i data-lucide="download"></i> Download PDF
-        </button>
+        <div>
+            <div id="syncStatus" style="font-size:13px; color:#666; margin-bottom:8px; text-align:right;">Waiting for email sync...</div>
+            <button class="download-btn" onclick="loadReportResults()">
+                <i data-lucide="refresh-cw"></i> Sync Latest
+            </button>
+            <button class="download-btn" onclick="downloadPDF()">
+                <i data-lucide="download"></i> Download PDF
+            </button>
+        </div>
     </div>
 
     <!-- SUMMARY -->
@@ -351,6 +456,83 @@ th, td {
             <h3>Email Analysis Trend</h3>
             <canvas id="barChart"></canvas>
         </div>
+
+        <div class="chart-box full-width">
+            <h3>Performance Metrics</h3>
+            <canvas id="performanceChart"></canvas>
+        </div>
+    </div>
+
+    <!-- MODEL PERFORMANCE -->
+    <div class="performance-box">
+        <h3>Model Performance</h3>
+
+        <div class="performance-grid">
+            <div class="metric-card">
+                <h4>Evaluated Emails</h4>
+                <strong id="evaluatedCount">0</strong>
+            </div>
+            <div class="metric-card">
+                <h4>True Positives</h4>
+                <strong id="tpCount">0</strong>
+            </div>
+            <div class="metric-card">
+                <h4>True Negatives</h4>
+                <strong id="tnCount">0</strong>
+            </div>
+            <div class="metric-card">
+                <h4>False Positives</h4>
+                <strong id="fpCount">0</strong>
+            </div>
+            <div class="metric-card">
+                <h4>False Negatives</h4>
+                <strong id="fnCount">0</strong>
+            </div>
+            <div class="metric-card">
+                <h4>Accuracy</h4>
+                <strong id="accuracyScore">0%</strong>
+            </div>
+            <div class="metric-card">
+                <h4>Precision</h4>
+                <strong id="precisionScore">0%</strong>
+            </div>
+            <div class="metric-card">
+                <h4>Recall</h4>
+                <strong id="recallScore">0%</strong>
+            </div>
+            <div class="metric-card">
+                <h4>F1 Score</h4>
+                <strong id="f1Score">0%</strong>
+            </div>
+        </div>
+
+        <div class="matrix-wrap">
+            <table class="matrix-table">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>Actual Phishing</th>
+                        <th>Actual Safe</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <th>Predicted Phishing</th>
+                        <td id="matrixTp">0</td>
+                        <td id="matrixFp">0</td>
+                    </tr>
+                    <tr>
+                        <th>Predicted Safe</th>
+                        <td id="matrixFn">0</td>
+                        <td id="matrixTn">0</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <p class="metric-note">
+            Metrics use emails that have an Actual Label selected in Email Scan Results.
+        </p>
     </div>
 
     <!-- TABLE -->
@@ -378,27 +560,51 @@ lucide.createIcons();
 /* ===== CHART INSTANCES ===== */
 let pieChart = null;
 let barChart = null;
+let performanceChart = null;
 let reportResults = [];
+let reportLoading = false;
+let reportTimeoutRef = null;
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzPxR7fokp5FQr5YDmJmbqOvRaF3h6gyL-CxIWysyvTBj_ncCewz44oXy3ARUMHXkrxhw/exec";
+
+function resetProjectCountsOnce() {
+    const resetKey = "secureTraceResetVersion";
+    const resetVersion = "email-performance-reset-v3";
+
+    if (localStorage.getItem(resetKey) === resetVersion) return;
+
+    localStorage.removeItem("emailAnalysisResults");
+    localStorage.removeItem("recentAnalysis");
+    localStorage.setItem("stats", JSON.stringify({
+        emails: 0,
+        transactions: 0,
+        alerts: 0,
+        reports: 0,
+        phishing: 0,
+        potential: 0,
+        dailyHistory: {}
+    }));
+    localStorage.setItem(resetKey, resetVersion);
+}
 
 function getEmailAnalysisResults() {
     if (Array.isArray(reportResults) && reportResults.length > 0) {
-        return reportResults;
+        return reportResults.slice(0, 50);
     }
 
     const records = JSON.parse(localStorage.getItem('emailAnalysisResults')) || [];
-    return Array.isArray(records) ? records : [];
+    return Array.isArray(records) ? records.slice(0, 50) : [];
 }
 
 function normalizeCategory(record) {
-    const label = String(record?.Category_Label || '').toLowerCase();
-    const category = String(record?.Category || '').toUpperCase();
+    const label = String(getEmailField(record, ['Category_Label', 'Category Label', 'Prediction_Label', 'Prediction Label', 'Label', 'Status']) || '').toLowerCase();
+    const category = String(getEmailField(record, ['Category', 'Prediction', 'Predicted_Label', 'Predicted Label', 'Predicted', 'Result']) || '').toUpperCase();
+    const risk = String(getEmailField(record, ['Risk', 'Risk_Level', 'Risk Level', 'Threat']) || '').toLowerCase();
 
     if (label.includes('potential') || category === 'POTENTIAL_PHISHING') {
         return 'POTENTIAL_PHISHING';
     }
 
-    if (label.includes('phishing') || category === 'PHISHING') {
+    if (label.includes('phishing') || category === 'PHISHING' || risk.includes('phishing')) {
         return 'PHISHING';
     }
 
@@ -406,7 +612,7 @@ function normalizeCategory(record) {
 }
 
 function getRecordTime(record) {
-    return Number(record?.Date_Timestamp || Date.parse(record?.Date || record?.date) || 0);
+    return Number(getEmailField(record, ['Date_Timestamp', 'Date Timestamp', 'Timestamp']) || Date.parse(getEmailField(record, ['Date', 'date', 'Email Date', 'Created At'])) || 0);
 }
 
 function getRecordDateKey(record) {
@@ -479,25 +685,103 @@ function getThreatSummary() {
     };
 }
 
+function syncStatsFromEmailResults() {
+    const summary = getThreatSummary();
+    const stats = getStats();
+
+    stats.emails = summary.total;
+    stats.phishing = summary.phishing;
+    stats.potential = summary.potential;
+    stats.alerts = summary.phishing + summary.potential;
+    setStats(stats);
+
+    return stats;
+}
+
+function setSyncStatus(message) {
+    const status = document.getElementById('syncStatus');
+    if (status) status.innerText = message;
+}
+
 function loadReportResults() {
+    if (reportLoading) return;
+    reportLoading = true;
+    setSyncStatus('Syncing latest email results...');
+
     const oldScript = document.getElementById('reportJsonpScript');
     if (oldScript) oldScript.remove();
 
     const script = document.createElement('script');
     script.id = 'reportJsonpScript';
-    script.src = SCRIPT_URL + '?action=getResults&callback=handleReportResults&t=' + Date.now();
+    script.src = SCRIPT_URL + '?action=scanAndGetResults&callback=handleReportResults&sort=newest&t=' + Date.now();
     script.onerror = function () {
+        reportLoading = false;
+        setSyncStatus('Email sync failed. Showing saved results.');
         refreshAnalysis();
     };
+
+    clearTimeout(reportTimeoutRef);
+    reportTimeoutRef = setTimeout(() => {
+        const pendingScript = document.getElementById('reportJsonpScript');
+        if (pendingScript) pendingScript.remove();
+        reportLoading = false;
+        setSyncStatus('Email sync timed out. Showing saved results.');
+        refreshAnalysis();
+    }, 12000);
 
     document.body.appendChild(script);
 }
 
 function handleReportResults(data) {
-    reportResults = Array.isArray(data) ? data : [];
+    const storedLabels = getActualLabelsFromAllSources();
+    reportResults = extractEmailResults(data).slice(0, 50).map(email => {
+        const actualLabel = normalizeActualLabel(email?.Actual_Label || getStoredActualLabel(email, storedLabels));
+        return actualLabel ? { ...email, Actual_Label: actualLabel } : email;
+    });
+    clearTimeout(reportTimeoutRef);
+    reportLoading = false;
     localStorage.setItem('emailAnalysisResults', JSON.stringify(reportResults));
     syncRecentAnalysisFromResults(reportResults);
+    setSyncStatus(`Last sync: ${new Date().toLocaleTimeString()} | ${reportResults.length} emails received`);
     refreshAnalysis();
+}
+
+function extractEmailResults(response) {
+    if (typeof response === 'string') {
+        try {
+            return extractEmailResults(JSON.parse(response));
+        } catch (err) {
+            return [];
+        }
+    }
+
+    if (Array.isArray(response)) return response;
+
+    const candidates = [
+        response?.data,
+        response?.results,
+        response?.emails,
+        response?.records,
+        response?.rows,
+        response?.result
+    ];
+
+    for (const candidate of candidates) {
+        if (typeof candidate === 'string') {
+            const parsed = extractEmailResults(candidate);
+            if (parsed.length) return parsed;
+        }
+    }
+
+    const directMatch = candidates.find(Array.isArray);
+    if (directMatch) return directMatch;
+
+    if (response && typeof response === 'object') {
+        const nestedMatch = Object.values(response).find(Array.isArray);
+        if (nestedMatch) return nestedMatch;
+    }
+
+    return [];
 }
 
 function syncRecentAnalysisFromResults(results) {
@@ -521,6 +805,205 @@ function getStatusLabel(email) {
     if (category === 'POTENTIAL_PHISHING') return 'Potential Phishing';
     return 'Safe';
 }
+
+function getEmailField(email, names) {
+    const keys = Object.keys(email || {});
+    const normalizedLookup = {};
+
+    keys.forEach(key => {
+        normalizedLookup[key.toLowerCase().replace(/[\s_-]/g, '')] = email[key];
+    });
+
+    for (const name of names) {
+        const directValue = email?.[name];
+        if (directValue !== undefined && directValue !== null && directValue !== '') return directValue;
+
+        const normalizedName = name.toLowerCase().replace(/[\s_-]/g, '');
+        const normalizedValue = normalizedLookup[normalizedName];
+        if (normalizedValue !== undefined && normalizedValue !== null && normalizedValue !== '') return normalizedValue;
+    }
+
+    return '';
+}
+
+function getActualLabels() {
+    try {
+        return JSON.parse(localStorage.getItem('actualEmailLabels')) || {};
+    } catch (err) {
+        return {};
+    }
+}
+
+function getEmailKey(email) {
+    return getEmailKeys(email)[0];
+}
+
+function getEmailKeys(email) {
+    const idKeys = [
+        email?.Message_ID,
+        email?.MessageID,
+        email?.['Message ID'],
+        email?.['Message Id'],
+        email?.messageId,
+        email?.message_id,
+        email?.Thread_ID,
+        email?.ThreadID,
+        email?.['Thread ID'],
+        email?.['Thread Id'],
+        email?.threadId,
+        email?.thread_id,
+        getEmailField(email, ['Message_ID', 'Message ID', 'Message Id', 'messageId', 'message_id']),
+        getEmailField(email, ['Thread_ID', 'Thread ID', 'Thread Id', 'threadId', 'thread_id'])
+    ];
+
+    const normalizedIdKeys = [...new Set(idKeys.map(key => String(key || '').trim()).filter(Boolean))];
+    if (normalizedIdKeys.length > 0) return normalizedIdKeys;
+
+    const fallbackKey = `${getEmailField(email, ['Date', 'Email Date']) || ''}-${getEmailField(email, ['From', 'Sender', 'Email From']) || ''}-${getEmailField(email, ['Subject', 'Email Subject']) || ''}`.trim();
+    return fallbackKey.replace(/-/g, '') ? [fallbackKey] : [];
+}
+
+function getActualLabelsFromAllSources() {
+    const labels = { ...getActualLabels() };
+    const cachedRecords = JSON.parse(localStorage.getItem('emailAnalysisResults')) || [];
+
+    if (Array.isArray(cachedRecords)) {
+        cachedRecords.forEach(email => {
+            const actualLabel = normalizeActualLabel(email?.Actual_Label);
+            if (!actualLabel) return;
+
+            getEmailKeys(email).forEach(key => {
+                labels[key] = actualLabel;
+            });
+        });
+    }
+
+    return labels;
+}
+
+function normalizeActualLabel(value) {
+    const label = String(value || '').trim().toUpperCase();
+
+    if (label.includes('PHISH')) return 'PHISHING';
+    if (label.includes('SAFE') || label.includes('LEGIT')) return 'SAFE';
+    return '';
+}
+
+function getActualLabel(email) {
+    return (
+        normalizeActualLabel(getEmailField(email, ['Actual_Label', 'Actual Label', 'Actual', 'Ground Truth', 'True Label'])) ||
+        normalizeActualLabel(getStoredActualLabel(email)) ||
+        getPredictedLabelAsActual(email)
+    );
+}
+
+function getPredictedLabelAsActual(email) {
+    return isPredictedPhishing(email) ? 'PHISHING' : 'SAFE';
+}
+
+function getStoredActualLabel(email, labels = getActualLabelsFromAllSources()) {
+    const keys = getEmailKeys(email);
+    const matchedKey = keys.find(key => labels[key]);
+    return matchedKey ? labels[matchedKey] : "";
+}
+
+function isPredictedPhishing(email) {
+    const category = normalizeCategory(email);
+    return category === 'PHISHING' || category === 'POTENTIAL_PHISHING';
+}
+
+function calculateModelPerformance() {
+    const records = getEmailAnalysisResults();
+    const totals = {
+        tp: 0,
+        tn: 0,
+        fp: 0,
+        fn: 0,
+        evaluated: 0
+    };
+
+    records.forEach(email => {
+        const actualLabel = getActualLabel(email);
+        if (!actualLabel) return;
+
+        const actualPhishing = actualLabel === 'PHISHING';
+        const predictedPhishing = isPredictedPhishing(email);
+
+        totals.evaluated += 1;
+
+        if (predictedPhishing && actualPhishing) totals.tp += 1;
+        else if (!predictedPhishing && !actualPhishing) totals.tn += 1;
+        else if (predictedPhishing && !actualPhishing) totals.fp += 1;
+        else if (!predictedPhishing && actualPhishing) totals.fn += 1;
+    });
+
+    const accuracy = safeDivide(totals.tp + totals.tn, totals.evaluated);
+    const precision = safeDivide(totals.tp, totals.tp + totals.fp);
+    const recall = safeDivide(totals.tp, totals.tp + totals.fn);
+    const f1 = safeDivide(2 * precision * recall, precision + recall);
+
+    return {
+        ...totals,
+        accuracy,
+        precision,
+        recall,
+        f1
+    };
+}
+
+function safeDivide(numerator, denominator) {
+    return denominator > 0 ? numerator / denominator : 0;
+}
+
+function formatPercent(value) {
+    return `${(value * 100).toFixed(1)}%`;
+}
+
+function setText(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.innerText = value;
+}
+
+function updateModelPerformance() {
+    const metrics = calculateModelPerformance();
+
+    setText('evaluatedCount', metrics.evaluated);
+    setText('tpCount', metrics.tp);
+    setText('tnCount', metrics.tn);
+    setText('fpCount', metrics.fp);
+    setText('fnCount', metrics.fn);
+    setText('accuracyScore', formatPercent(metrics.accuracy));
+    setText('precisionScore', formatPercent(metrics.precision));
+    setText('recallScore', formatPercent(metrics.recall));
+    setText('f1Score', formatPercent(metrics.f1));
+    setText('matrixTp', metrics.tp);
+    setText('matrixFp', metrics.fp);
+    setText('matrixFn', metrics.fn);
+    setText('matrixTn', metrics.tn);
+    updatePerformanceChart(metrics);
+}
+
+function getPerformanceChartData(metrics = calculateModelPerformance()) {
+    return {
+        labels: ['Accuracy', 'Precision', 'Recall', 'F1 Score'],
+        data: [
+            Number((metrics.accuracy * 100).toFixed(1)),
+            Number((metrics.precision * 100).toFixed(1)),
+            Number((metrics.recall * 100).toFixed(1)),
+            Number((metrics.f1 * 100).toFixed(1))
+        ]
+    };
+}
+
+function updatePerformanceChart(metrics = calculateModelPerformance()) {
+    if (!performanceChart) return;
+
+    const chartData = getPerformanceChartData(metrics);
+    performanceChart.data.labels = chartData.labels;
+    performanceChart.data.datasets[0].data = chartData.data;
+    performanceChart.update('none');
+}
+
 function initCharts() {
     const stats = getStats();
     const trend = getDailyTrend();
@@ -579,6 +1062,36 @@ function initCharts() {
             }
         }
     });
+
+    const performanceData = getPerformanceChartData();
+
+    performanceChart = new Chart(document.getElementById("performanceChart"), {
+        type: 'line',
+        data: {
+            labels: performanceData.labels,
+            datasets: [{
+                label: 'Performance Score (%)',
+                data: performanceData.data,
+                borderColor: '#2b6cff',
+                backgroundColor: 'rgba(43, 108, 255, 0.14)',
+                fill: true,
+                tension: 0.35,
+                pointRadius: 5,
+                pointBackgroundColor: '#2b6cff'
+            }]
+        },
+        options: {
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: {
+                        callback: value => `${value}%`
+                    }
+                }
+            }
+        }
+    });
 }
 
 /* ===== REAL-TIME CHART UPDATES ===== */
@@ -615,6 +1128,8 @@ function updateCharts() {
         barChart.data.datasets[0].data = trend.data;
         barChart.update('none');
     }
+
+    updatePerformanceChart();
 }
 
 function downloadPDF() {
@@ -635,6 +1150,7 @@ function downloadPDF() {
     // Update PDF summary values, charts, and table before export
     const currentStats = getStats();
     updatePdfSummary(currentStats);
+    updatePdfPerformance();
     buildPdfCharts(currentStats);
     renderPdfAnalysisTable();
 
@@ -653,11 +1169,30 @@ function downloadPDF() {
 
 let pdfPieChart = null;
 let pdfBarChart = null;
+let pdfPerformanceChart = null;
 
 function updatePdfSummary(stats) {
     const summary = getThreatSummary();
     document.getElementById('pdfEmails').innerText = summary.total;
     document.getElementById('pdfSafe').innerText = summary.safe;
+}
+
+function updatePdfPerformance() {
+    const metrics = calculateModelPerformance();
+
+    setText('pdfEvaluated', metrics.evaluated);
+    setText('pdfTp', metrics.tp);
+    setText('pdfTn', metrics.tn);
+    setText('pdfFp', metrics.fp);
+    setText('pdfFn', metrics.fn);
+    setText('pdfAccuracy', formatPercent(metrics.accuracy));
+    setText('pdfPrecision', formatPercent(metrics.precision));
+    setText('pdfRecall', formatPercent(metrics.recall));
+    setText('pdfF1', formatPercent(metrics.f1));
+    setText('pdfMatrixTp', metrics.tp);
+    setText('pdfMatrixFp', metrics.fp);
+    setText('pdfMatrixFn', metrics.fn);
+    setText('pdfMatrixTn', metrics.tn);
 }
 
 function buildPdfCharts(stats) {
@@ -715,6 +1250,36 @@ function buildPdfCharts(stats) {
             }
         }
     });
+
+    const performanceData = getPerformanceChartData();
+
+    pdfPerformanceChart = new Chart(document.getElementById('pdfPerformanceChart'), {
+        type: 'line',
+        data: {
+            labels: performanceData.labels,
+            datasets: [{
+                label: 'Performance Score (%)',
+                data: performanceData.data,
+                borderColor: '#2b6cff',
+                backgroundColor: 'rgba(43, 108, 255, 0.14)',
+                fill: true,
+                tension: 0.35,
+                pointRadius: 5,
+                pointBackgroundColor: '#2b6cff'
+            }]
+        },
+        options: {
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: {
+                        callback: value => `${value}%`
+                    }
+                }
+            }
+        }
+    });
 }
 
 function destroyPdfCharts() {
@@ -725,6 +1290,10 @@ function destroyPdfCharts() {
     if (pdfBarChart) {
         pdfBarChart.destroy();
         pdfBarChart = null;
+    }
+    if (pdfPerformanceChart) {
+        pdfPerformanceChart.destroy();
+        pdfPerformanceChart = null;
     }
 }
 
@@ -772,12 +1341,13 @@ function setStats(data) {
 
 /* ===== UPDATE UI ===== */
 function updateUI() {
-    const stats = getStats();
+    const stats = syncStatsFromEmailResults();
     const summary = getThreatSummary();
 
     document.getElementById("emails").innerText = summary.total;
     document.getElementById("transactions").innerText = stats.transactions;
     document.getElementById("reports").innerText = stats.reports;
+    updateModelPerformance();
 }
 
 function getRecentAnalysis() {
@@ -865,10 +1435,12 @@ function refreshAnalysis() {
     updateUI();
     renderAnalysisTable();
     updateCharts();
+    updateModelPerformance();
 }
 
 /* ===== INIT ===== */
 window.onload = function () {
+    resetProjectCountsOnce();
     initStats();
     updateUI();
     initCharts();
@@ -877,10 +1449,11 @@ window.onload = function () {
     // Update charts and current analysis every 3 seconds for live sync
     setInterval(updateCharts, 3000);
     setInterval(refreshAnalysis, 3000);
+    setInterval(loadReportResults, 10000);
     window.addEventListener('storage', refreshAnalysis);
-    window.addEventListener('focus', refreshAnalysis);
-    refreshAnalysis();
+    window.addEventListener('focus', loadReportResults);
     loadReportResults();
+    refreshAnalysis();
 };
 
 // GLOBAL ACTIVITY LOGGER

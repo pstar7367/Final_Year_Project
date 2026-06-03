@@ -257,6 +257,8 @@ body {
 
 <script>
 lucide.createIcons();
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzPxR7fokp5FQr5YDmJmbqOvRaF3h6gyL-CxIWysyvTBj_ncCewz44oXy3ARUMHXkrxhw/exec";
+let dashboardLoading = false;
 
 /* ===== STORAGE ===== */
 function initStats() {
@@ -265,22 +267,190 @@ function initStats() {
             emails: 0,
             transactions: 0,
             alerts: 0,
-            reports: 0
+            reports: 0,
+            phishing: 0,
+            potential: 0,
+            dailyHistory: {}
         }));
     }
 }
 
+function resetProjectCountsOnce() {
+    const resetKey = "secureTraceResetVersion";
+    const resetVersion = "email-performance-reset-v3";
+
+    if (localStorage.getItem(resetKey) === resetVersion) return;
+
+    localStorage.removeItem("emailAnalysisResults");
+    localStorage.removeItem("recentAnalysis");
+    localStorage.setItem("stats", JSON.stringify({
+        emails: 0,
+        transactions: 0,
+        alerts: 0,
+        reports: 0,
+        phishing: 0,
+        potential: 0,
+        dailyHistory: {}
+    }));
+    localStorage.setItem(resetKey, resetVersion);
+}
+
 function getStats() {
-    return JSON.parse(localStorage.getItem("stats"));
+    initStats();
+    const stats = JSON.parse(localStorage.getItem("stats")) || {};
+    stats.emails = stats.emails || 0;
+    stats.transactions = stats.transactions || 0;
+    stats.alerts = stats.alerts || 0;
+    stats.reports = stats.reports || 0;
+    stats.phishing = stats.phishing || 0;
+    stats.potential = stats.potential || 0;
+    stats.dailyHistory = stats.dailyHistory && !Array.isArray(stats.dailyHistory) ? stats.dailyHistory : {};
+    return stats;
 }
 
 function setStats(data) {
     localStorage.setItem("stats", JSON.stringify(data));
 }
 
+function getEmailAnalysisResults() {
+    try {
+        const records = JSON.parse(localStorage.getItem("emailAnalysisResults")) || [];
+        return Array.isArray(records) ? records.slice(0, 50) : [];
+    } catch (err) {
+        return [];
+    }
+}
+
+function normalizeCategory(record) {
+    const label = String(getEmailField(record, ["Category_Label", "Category Label", "Prediction_Label", "Prediction Label", "Label", "Status"]) || "").toLowerCase();
+    const category = String(getEmailField(record, ["Category", "Prediction", "Predicted_Label", "Predicted Label", "Predicted", "Result"]) || "").toUpperCase();
+    const risk = String(getEmailField(record, ["Risk", "Risk_Level", "Risk Level", "Threat"]) || "").toLowerCase();
+
+    if (label.includes("potential") || category === "POTENTIAL_PHISHING") {
+        return "POTENTIAL_PHISHING";
+    }
+
+    if (label.includes("phishing") || category === "PHISHING" || risk.includes("phishing")) {
+        return "PHISHING";
+    }
+
+    return "SAFE";
+}
+
+function getEmailField(email, names) {
+    const keys = Object.keys(email || {});
+    const normalizedLookup = {};
+
+    keys.forEach(key => {
+        normalizedLookup[key.toLowerCase().replace(/[\s_-]/g, "")] = email[key];
+    });
+
+    for (const name of names) {
+        const directValue = email?.[name];
+        if (directValue !== undefined && directValue !== null && directValue !== "") return directValue;
+
+        const normalizedName = name.toLowerCase().replace(/[\s_-]/g, "");
+        const normalizedValue = normalizedLookup[normalizedName];
+        if (normalizedValue !== undefined && normalizedValue !== null && normalizedValue !== "") return normalizedValue;
+    }
+
+    return "";
+}
+
+function getEmailKeys(email) {
+    const idKeys = [
+        getEmailField(email, ["Message_ID", "Message ID", "Message Id", "messageId", "message_id"]),
+        getEmailField(email, ["Thread_ID", "Thread ID", "Thread Id", "threadId", "thread_id"])
+    ];
+
+    const normalizedIdKeys = [...new Set(idKeys.map(key => String(key || "").trim()).filter(Boolean))];
+    if (normalizedIdKeys.length > 0) return normalizedIdKeys;
+
+    const fallbackKey = `${getEmailField(email, ["Date", "Email Date"]) || ""}-${getEmailField(email, ["From", "Sender", "Email From"]) || ""}-${getEmailField(email, ["Subject", "Email Subject"]) || ""}`.trim();
+    return fallbackKey.replace(/-/g, "") ? [fallbackKey] : [];
+}
+
+function extractEmailResults(response) {
+    if (typeof response === "string") {
+        try {
+            return extractEmailResults(JSON.parse(response));
+        } catch (err) {
+            return [];
+        }
+    }
+
+    if (Array.isArray(response)) return response;
+
+    const candidates = [
+        response?.data,
+        response?.results,
+        response?.emails,
+        response?.records,
+        response?.rows,
+        response?.result
+    ];
+
+    for (const candidate of candidates) {
+        if (typeof candidate === "string") {
+            const parsed = extractEmailResults(candidate);
+            if (parsed.length) return parsed;
+        }
+    }
+
+    const directMatch = candidates.find(Array.isArray);
+    if (directMatch) return directMatch;
+
+    if (response && typeof response === "object") {
+        const nestedMatch = Object.values(response).find(Array.isArray);
+        if (nestedMatch) return nestedMatch;
+    }
+
+    return [];
+}
+
+function loadDashboardResults() {
+    if (dashboardLoading) return;
+    dashboardLoading = true;
+
+    const oldScript = document.getElementById("dashboardJsonpScript");
+    if (oldScript) oldScript.remove();
+
+    const script = document.createElement("script");
+    script.id = "dashboardJsonpScript";
+    script.src = SCRIPT_URL + "?action=scanAndGetResults&callback=handleDashboardResults&sort=newest&t=" + Date.now();
+    script.onerror = function () {
+        dashboardLoading = false;
+        updateUI();
+    };
+
+    document.body.appendChild(script);
+}
+
+function handleDashboardResults(data) {
+    const latestResults = extractEmailResults(data).slice(0, 50);
+    localStorage.setItem("emailAnalysisResults", JSON.stringify(latestResults));
+    dashboardLoading = false;
+    updateUI();
+}
+
+function syncStatsFromEmailResults() {
+    const records = getEmailAnalysisResults();
+    const stats = getStats();
+    const phishing = records.filter(record => normalizeCategory(record) === "PHISHING").length;
+    const potential = records.filter(record => normalizeCategory(record) === "POTENTIAL_PHISHING").length;
+
+    stats.emails = records.length;
+    stats.phishing = phishing;
+    stats.potential = potential;
+    stats.alerts = phishing + potential;
+    setStats(stats);
+
+    return stats;
+}
+
 /* ===== UPDATE UI ===== */
 function updateUI() {
-    const stats = getStats();
+    const stats = syncStatsFromEmailResults();
 
     document.getElementById("emails").innerText = stats.emails;
     document.getElementById("transactions").innerText = stats.transactions;
@@ -289,13 +459,6 @@ function updateUI() {
 
 /* ===== ACTIONS ===== */
 function goToEmail() {
-    let stats = getStats();
-
-    stats.emails += 5;
-    stats.alerts += Math.floor(Math.random() * 2);
-
-    setStats(stats);
-
     window.location.href = "email.html";
 }
 
@@ -322,8 +485,10 @@ function openTransaction() {
 
 /* ===== INIT ===== */
 window.onload = function () {
+    resetProjectCountsOnce();
     initStats();
     updateUI();
+    loadDashboardResults();
 };
 
 // 🧠 GLOBAL ACTIVITY LOGGER
@@ -342,8 +507,10 @@ function logActivity(message) {
 }
 
 window.onload = function () {
+    resetProjectCountsOnce();
     initStats();
     updateUI();
+    loadDashboardResults();
 
     logActivity("Visited dashboard");
 };

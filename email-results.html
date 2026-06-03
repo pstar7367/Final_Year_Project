@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -122,6 +122,22 @@ td a {
     white-space: nowrap;
 }
 
+.actual-label-select {
+    width: 100%;
+    min-width: 105px;
+    border: 1px solid #d7deed;
+    border-radius: 6px;
+    background: #fff;
+    color: #222;
+    font-size: 13px;
+    padding: 7px 8px;
+    outline: none;
+}
+
+.actual-label-select:focus {
+    border-color: #2b6cff;
+}
+
 th {
     background: #f0f4ff;
     color: #333;
@@ -204,6 +220,7 @@ tr {
 <th>From</th>
 <th>Subject</th>
 <th>Category</th>
+<th>Actual Label</th>
 <th>Risk</th>
 <th>Confidence</th>
 <th>URLs</th>
@@ -214,7 +231,7 @@ tr {
 
 <tbody id="resultsTable">
 <tr>
-<td colspan="9" class="center">Loading...</td>
+<td colspan="10" class="center">Loading...</td>
 </tr>
 </tbody>
 </table>
@@ -251,6 +268,26 @@ function initStats() {
     }
 }
 
+function resetProjectCountsOnce() {
+    const resetKey = "secureTraceResetVersion";
+    const resetVersion = "email-performance-reset-v3";
+
+    if (localStorage.getItem(resetKey) === resetVersion) return;
+
+    localStorage.removeItem("emailAnalysisResults");
+    localStorage.removeItem("recentAnalysis");
+    localStorage.setItem("stats", JSON.stringify({
+        emails: 0,
+        transactions: 0,
+        alerts: 0,
+        reports: 0,
+        phishing: 0,
+        potential: 0,
+        dailyHistory: {}
+    }));
+    localStorage.setItem(resetKey, resetVersion);
+}
+
 function getStats() {
     initStats();
     const stats = JSON.parse(localStorage.getItem("stats"));
@@ -277,6 +314,81 @@ function setStats(data) {
 
 function saveRecentAnalysis(records) {
     localStorage.setItem('recentAnalysis', JSON.stringify(records));
+}
+
+function getActualLabels() {
+    try {
+        return JSON.parse(localStorage.getItem("actualEmailLabels")) || {};
+    } catch (err) {
+        return {};
+    }
+}
+
+function saveActualLabels(labels) {
+    localStorage.setItem("actualEmailLabels", JSON.stringify(labels));
+}
+
+function getActualLabel(email) {
+    const labels = getActualLabels();
+    return normalizeActualLabel(email.Actual_Label || getStoredActualLabel(email, labels));
+}
+
+function getStoredActualLabel(email, labels = getActualLabels()) {
+    const keys = getEmailKeys(email);
+    const matchedKey = keys.find(key => labels[key]);
+    return matchedKey ? labels[matchedKey] : "";
+}
+
+function normalizeActualLabel(value) {
+    const label = String(value || "").trim().toUpperCase();
+    if (label === "SAFE") return "SAFE";
+    if (label === "PHISHING") return "PHISHING";
+    return "";
+}
+
+function updateActualLabel(emailKey, value) {
+    const labels = getActualLabels();
+    const normalizedValue = normalizeActualLabel(value);
+    const matchedEmail = currentResults.find(email => getEmailKeys(email).includes(emailKey));
+    const keysToSave = matchedEmail ? getEmailKeys(matchedEmail) : [emailKey];
+
+    if (normalizedValue) {
+        keysToSave.forEach(key => {
+            labels[key] = normalizedValue;
+        });
+    } else {
+        keysToSave.forEach(key => {
+            delete labels[key];
+        });
+    }
+
+    saveActualLabels(labels);
+    updateCachedActualLabel(emailKey, normalizedValue);
+    logActivity("Updated actual email label");
+}
+
+function updateCachedActualLabel(emailKey, value) {
+    currentResults = currentResults.map(email => updateEmailActualLabel(email, emailKey, value));
+
+    const cachedResults = JSON.parse(localStorage.getItem("emailAnalysisResults")) || [];
+    if (Array.isArray(cachedResults)) {
+        localStorage.setItem(
+            "emailAnalysisResults",
+            JSON.stringify(cachedResults.map(email => updateEmailActualLabel(email, emailKey, value)))
+        );
+    }
+}
+
+function updateEmailActualLabel(email, emailKey, value) {
+    if (!getEmailKeys(email).includes(emailKey)) return email;
+
+    if (value) {
+        return { ...email, Actual_Label: value };
+    }
+
+    const updatedEmail = { ...email };
+    delete updatedEmail.Actual_Label;
+    return updatedEmail;
 }
 
 function getRecentAnalysis() {
@@ -313,9 +425,13 @@ function syncReportDataFromResults(results) {
     initStats();
 
     const stats = getStats();
-    const safeResults = Array.isArray(results) ? results : [];
-    const phishingCount = safeResults.filter(e => e.Category === "PHISHING").length;
-    const potentialCount = safeResults.filter(e => e.Category === "POTENTIAL_PHISHING").length;
+    const labels = getActualLabels();
+    const safeResults = (Array.isArray(results) ? results : []).slice(0, 50).map(email => {
+        const actualLabel = normalizeActualLabel(email.Actual_Label || getStoredActualLabel(email, labels));
+        return actualLabel ? { ...email, Actual_Label: actualLabel } : email;
+    });
+    const phishingCount = safeResults.filter(e => normalizeCategory(e) === "PHISHING").length;
+    const potentialCount = safeResults.filter(e => normalizeCategory(e) === "POTENTIAL_PHISHING").length;
     const dailyHistory = {};
 
     safeResults.forEach(email => {
@@ -346,8 +462,44 @@ function syncReportDataFromResults(results) {
     logActivity(`Synced report data from ${safeResults.length} email results`);
 }
 
+function getEmailField(email, names) {
+    const keys = Object.keys(email || {});
+    const normalizedLookup = {};
+
+    keys.forEach(key => {
+        normalizedLookup[key.toLowerCase().replace(/[\s_-]/g, "")] = email[key];
+    });
+
+    for (const name of names) {
+        const directValue = email?.[name];
+        if (directValue !== undefined && directValue !== null && directValue !== "") return directValue;
+
+        const normalizedName = name.toLowerCase().replace(/[\s_-]/g, "");
+        const normalizedValue = normalizedLookup[normalizedName];
+        if (normalizedValue !== undefined && normalizedValue !== null && normalizedValue !== "") return normalizedValue;
+    }
+
+    return "";
+}
+
+function normalizeCategory(email) {
+    const label = String(getEmailField(email, ["Category_Label", "Category Label", "Prediction_Label", "Prediction Label", "Label", "Status"]) || "").toLowerCase();
+    const category = String(getEmailField(email, ["Category", "Prediction", "Predicted_Label", "Predicted Label", "Predicted", "Result"]) || "").toUpperCase();
+    const risk = String(getEmailField(email, ["Risk", "Risk_Level", "Risk Level", "Threat"]) || "").toLowerCase();
+
+    if (label.includes("potential") || category === "POTENTIAL_PHISHING") {
+        return "POTENTIAL_PHISHING";
+    }
+
+    if (label.includes("phishing") || category === "PHISHING" || risk.includes("phishing")) {
+        return "PHISHING";
+    }
+
+    return "SAFE";
+}
+
 function getEmailTime(email) {
-    return Number(email?.Date_Timestamp || Date.parse(email?.Date) || 0);
+    return Number(getEmailField(email, ["Date_Timestamp", "Date Timestamp", "Timestamp"]) || Date.parse(getEmailField(email, ["Date", "Email Date", "Created At"])) || 0);
 }
 
 function getEmailDateKey(email) {
@@ -364,9 +516,77 @@ function getEmailDateKey(email) {
 
 function getEmailStatusLabel(email) {
     if (email.Category_Label) return email.Category_Label;
-    if (email.Category === "PHISHING") return "Phishing";
-    if (email.Category === "POTENTIAL_PHISHING") return "Potential Phishing";
+    const category = normalizeCategory(email);
+    if (category === "PHISHING") return "Phishing";
+    if (category === "POTENTIAL_PHISHING") return "Potential Phishing";
     return "Safe";
+}
+
+function getEmailKey(email) {
+    return getEmailKeys(email)[0];
+}
+
+function getEmailKeys(email) {
+    const idKeys = [
+        email?.Message_ID,
+        email?.MessageID,
+        email?.["Message ID"],
+        email?.["Message Id"],
+        email?.messageId,
+        email?.message_id,
+        email?.Thread_ID,
+        email?.ThreadID,
+        email?.["Thread ID"],
+        email?.["Thread Id"],
+        email?.threadId,
+        email?.thread_id,
+        getEmailField(email, ["Message_ID", "Message ID", "Message Id", "messageId", "message_id"]),
+        getEmailField(email, ["Thread_ID", "Thread ID", "Thread Id", "threadId", "thread_id"])
+    ];
+
+    const normalizedIdKeys = [...new Set(idKeys.map(key => String(key || "").trim()).filter(Boolean))];
+    if (normalizedIdKeys.length > 0) return normalizedIdKeys;
+
+    const fallbackKey = `${getEmailField(email, ["Date", "Email Date"]) || ""}-${getEmailField(email, ["From", "Sender", "Email From"]) || ""}-${getEmailField(email, ["Subject", "Email Subject"]) || ""}`.trim();
+    return fallbackKey.replace(/-/g, "") ? [fallbackKey] : [];
+}
+
+function extractEmailResults(response) {
+    if (typeof response === "string") {
+        try {
+            return extractEmailResults(JSON.parse(response));
+        } catch (err) {
+            return [];
+        }
+    }
+
+    if (Array.isArray(response)) return response;
+
+    const candidates = [
+        response?.data,
+        response?.results,
+        response?.emails,
+        response?.records,
+        response?.rows,
+        response?.result
+    ];
+
+    for (const candidate of candidates) {
+        if (typeof candidate === "string") {
+            const parsed = extractEmailResults(candidate);
+            if (parsed.length) return parsed;
+        }
+    }
+
+    const directMatch = candidates.find(Array.isArray);
+    if (directMatch) return directMatch;
+
+    if (response && typeof response === "object") {
+        const nestedMatch = Object.values(response).find(Array.isArray);
+        if (nestedMatch) return nestedMatch;
+    }
+
+    return [];
 }
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzPxR7fokp5FQr5YDmJmbqOvRaF3h6gyL-CxIWysyvTBj_ncCewz44oXy3ARUMHXkrxhw/exec";
@@ -389,7 +609,7 @@ function loadResults() {
 
     table.innerHTML = `
         <tr>
-            <td colspan="9" class="center">Checking latest emails...</td>
+            <td colspan="10" class="center">Checking latest emails...</td>
         </tr>
     `;
 
@@ -426,11 +646,11 @@ function loadResults() {
 
 // ✅ HANDLE DATA
 function handleData(data) {
-    currentResults = Array.isArray(data) ? data : [];
+    currentResults = extractEmailResults(data).slice(0, 50);
     data = currentResults;
 
-    const phishingCount = data.filter(e => e.Category === "PHISHING").length;
-    const potentialCount = data.filter(e => e.Category === "POTENTIAL_PHISHING").length;
+    const phishingCount = data.filter(e => normalizeCategory(e) === "PHISHING").length;
+    const potentialCount = data.filter(e => normalizeCategory(e) === "POTENTIAL_PHISHING").length;
     const alertCount = phishingCount + potentialCount;
     logActivity(`Scanned ${data.length} emails, detected ${alertCount} alerts`);
     clearTimeout(timeoutRef);
@@ -450,7 +670,7 @@ function handleData(data) {
     if (!data || data.length === 0) {
         table.innerHTML = `
             <tr>
-                <td colspan="9" class="center">
+                <td colspan="10" class="center">
                     No new emails
                 </td>
             </tr>
@@ -507,23 +727,34 @@ function renderTable(data) {
 
     data.forEach(email => {
         let statusClass = "status-safe";
+        const category = normalizeCategory(email);
 
-        if (email.Category === "PHISHING")
+        if (category === "PHISHING")
             statusClass = "status-danger";
-        else if (email.Category === "POTENTIAL_PHISHING")
+        else if (category === "POTENTIAL_PHISHING")
             statusClass = "status-warning";
+
+        const emailKey = getEmailKey(email);
+        const actualLabel = getActualLabel(email);
 
         table.innerHTML += `
         <tr>
-            <td>${email.Date || "-"}</td>
-            <td>${email.From || "-"}</td>
-            <td>${email.Subject || "-"}</td>
-            <td class="${statusClass}">${email.Category_Label || email.Category || "-"}</td>
-            <td>${email.Risk || "-"}</td>
-            <td>${email.Confidence || "-"}</td>
+            <td>${escapeHtml(email.Date || "-")}</td>
+            <td>${escapeHtml(email.From || "-")}</td>
+            <td>${escapeHtml(email.Subject || "-")}</td>
+            <td class="${statusClass}">${escapeHtml(email.Category_Label || email.Category || "-")}</td>
+            <td>
+                <select class="actual-label-select" data-email-key="${escapeHtml(emailKey)}" onchange="updateActualLabel(this.dataset.emailKey, this.value)">
+                    <option value="" ${actualLabel === "" ? "selected" : ""}>Unknown</option>
+                    <option value="SAFE" ${actualLabel === "SAFE" ? "selected" : ""}>Safe</option>
+                    <option value="PHISHING" ${actualLabel === "PHISHING" ? "selected" : ""}>Phishing</option>
+                </select>
+            </td>
+            <td>${escapeHtml(email.Risk || "-")}</td>
+            <td>${escapeHtml(email.Confidence || "-")}</td>
             <td>${formatUrls(email.URLs)}</td>
-            <td>${email.Thread_ID || "-"}</td>
-            <td>${email.Message_ID || "-"}</td>
+            <td>${escapeHtml(email.Thread_ID || "-")}</td>
+            <td>${escapeHtml(email.Message_ID || "-")}</td>
         </tr>
         `;
     });
@@ -575,7 +806,7 @@ function showError(message) {
 
     table.innerHTML = `
         <tr>
-            <td colspan="9" class="center" style="color:red;">
+            <td colspan="10" class="center" style="color:red;">
                 ${message}
             </td>
         </tr>
@@ -584,12 +815,14 @@ function showError(message) {
     loading = false;
 }
 
+
 // 🌐 GO TO LIVE DASHBOARD (IMPORTANT)
 function goDashboard() {
     window.open("dashboard.html", "_top");
 }
 
-// 🚀 INITIAL LOAD
+// Initial load
+resetProjectCountsOnce();
 loadResults();
 </script>
 
