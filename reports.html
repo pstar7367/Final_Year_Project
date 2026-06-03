@@ -229,7 +229,7 @@ th, td {
 
 <body>
 
-    <!-- ✅ CLEAN PDF VERSION (HIDDEN) -->
+    <!-- CLEAN PDF VERSION (HIDDEN) -->
 <div id="pdfReport" style="display:none; padding:40px; font-family: Arial;">
 
     <h1 style="text-align:center; margin-bottom:20px;">
@@ -378,35 +378,179 @@ lucide.createIcons();
 /* ===== CHART INSTANCES ===== */
 let pieChart = null;
 let barChart = null;
+let reportResults = [];
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzPxR7fokp5FQr5YDmJmbqOvRaF3h6gyL-CxIWysyvTBj_ncCewz44oXy3ARUMHXkrxhw/exec";
 
+function getEmailAnalysisResults() {
+    if (Array.isArray(reportResults) && reportResults.length > 0) {
+        return reportResults;
+    }
+
+    const records = JSON.parse(localStorage.getItem('emailAnalysisResults')) || [];
+    return Array.isArray(records) ? records : [];
+}
+
+function normalizeCategory(record) {
+    const label = String(record?.Category_Label || '').toLowerCase();
+    const category = String(record?.Category || '').toUpperCase();
+
+    if (label.includes('potential') || category === 'POTENTIAL_PHISHING') {
+        return 'POTENTIAL_PHISHING';
+    }
+
+    if (label.includes('phishing') || category === 'PHISHING') {
+        return 'PHISHING';
+    }
+
+    return 'SAFE';
+}
+
+function getRecordTime(record) {
+    return Number(record?.Date_Timestamp || Date.parse(record?.Date || record?.date) || 0);
+}
+
+function getRecordDateKey(record) {
+    const time = getRecordTime(record);
+    if (!time) return '';
+
+    return getDateKey(new Date(time));
+}
+
+function getDailyTrend() {
+    const records = getEmailAnalysisResults();
+    const history = {};
+
+    records.forEach(record => {
+        const key = getRecordDateKey(record);
+        if (!key) return;
+        history[key] = (history[key] || 0) + 1;
+    });
+
+    const keys = Object.keys(history).sort();
+    const selectedKeys = keys.length > 0 ? keys.slice(-7) : getLastSevenDateKeys();
+
+    return {
+        labels: selectedKeys.map(key => formatDateKeyLabel(key)),
+        data: selectedKeys.map(key => Number(history[key] || 0))
+    };
+}
+
+function getLastSevenDateKeys() {
+    const keys = [];
+
+    for (let i = 6; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        keys.push(getDateKey(date));
+    }
+
+    return keys;
+}
+
+function formatDateKeyLabel(key) {
+    const [year, month, day] = key.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+
+    return date.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+function getDateKey(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+}
+
+function getThreatSummary() {
+    const records = getEmailAnalysisResults();
+    const phishing = records.filter(record => normalizeCategory(record) === 'PHISHING').length;
+    const potential = records.filter(record => normalizeCategory(record) === 'POTENTIAL_PHISHING').length;
+    const total = records.length;
+
+    return {
+        total,
+        phishing,
+        potential,
+        safe: Math.max(0, total - phishing - potential)
+    };
+}
+
+function loadReportResults() {
+    const oldScript = document.getElementById('reportJsonpScript');
+    if (oldScript) oldScript.remove();
+
+    const script = document.createElement('script');
+    script.id = 'reportJsonpScript';
+    script.src = SCRIPT_URL + '?action=getResults&callback=handleReportResults&t=' + Date.now();
+    script.onerror = function () {
+        refreshAnalysis();
+    };
+
+    document.body.appendChild(script);
+}
+
+function handleReportResults(data) {
+    reportResults = Array.isArray(data) ? data : [];
+    localStorage.setItem('emailAnalysisResults', JSON.stringify(reportResults));
+    syncRecentAnalysisFromResults(reportResults);
+    refreshAnalysis();
+}
+
+function syncRecentAnalysisFromResults(results) {
+    const records = [...results]
+        .sort((a, b) => getRecordTime(b) - getRecordTime(a))
+        .slice(0, 10)
+        .map(email => ({
+            date: email.Date || '-',
+            sender: email.From || '-',
+            subject: email.Subject || '-',
+            status: getStatusLabel(email)
+        }));
+
+    saveRecentAnalysis(records);
+}
+
+function getStatusLabel(email) {
+    const category = normalizeCategory(email);
+
+    if (category === 'PHISHING') return 'Phishing';
+    if (category === 'POTENTIAL_PHISHING') return 'Potential Phishing';
+    return 'Safe';
+}
 function initCharts() {
     const stats = getStats();
-    const barData = Array.isArray(stats.dailyHistory) ? Array.from(stats.dailyHistory) : [0, 0, 0, 0, 0];
+    const trend = getDailyTrend();
+    const summary = getThreatSummary();
 
-    const phishingCount = stats.phishing || 0;
-    const potentialCount = stats.potential || 0;
-    const totalEmails = stats.emails || 0;
-    const safeEmails = totalEmails > 0 ? Math.max(0, totalEmails - phishingCount - potentialCount) : 1;
+    const phishingCount = summary.phishing;
+    const potentialCount = summary.potential;
+    const safeEmails = summary.safe;
 
     const pieLabels = ['Safe'];
     const pieData = [safeEmails];
-    const pieColors = ['#52c41a']; // Green for Safe
+    const pieColors = ['#52c41a'];
+
     if (phishingCount > 0) {
         pieLabels.push('Phishing');
         pieData.push(phishingCount);
-        pieColors.push('#ff4d4f'); // Red for Phishing
+        pieColors.push('#ff4d4f');
     }
+
     if (potentialCount > 0) {
         pieLabels.push('Potential');
         pieData.push(potentialCount);
-        pieColors.push('#faad14'); // Yellow for Potential
+        pieColors.push('#faad14');
     }
 
     pieChart = new Chart(document.getElementById("pieChart"), {
         type: 'pie',
         data: {
             labels: pieLabels,
-            datasets: [{ 
+            datasets: [{
                 data: pieData,
                 backgroundColor: pieColors
             }]
@@ -416,17 +560,21 @@ function initCharts() {
     barChart = new Chart(document.getElementById("barChart"), {
         type: 'bar',
         data: {
-            labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+            labels: trend.labels,
             datasets: [{
-                label: 'Emails',
-                data: barData,
+                label: 'Emails Analyzed',
+                data: trend.data,
                 backgroundColor: '#2b6cff'
             }]
         },
         options: {
             scales: {
                 y: {
-                    beginAtZero: true
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0,
+                        stepSize: 1
+                    }
                 }
             }
         }
@@ -436,36 +584,35 @@ function initCharts() {
 /* ===== REAL-TIME CHART UPDATES ===== */
 function updateCharts() {
     const stats = getStats();
-    
-    const totalEmails = stats.emails || 0;
-    const phishingCount = stats.phishing || 0;
-    const potentialCount = stats.potential || 0;
-    const safeEmails = totalEmails > 0 ? Math.max(0, totalEmails - phishingCount - potentialCount) : 1;
-    
-    // Pie chart - threat distribution (only show phishing/potential if counts > 0)
+    const summary = getThreatSummary();
+
     if (pieChart) {
         const pieLabels = ['Safe'];
-        const pieData = [safeEmails];
-        const pieColors = ['#52c41a']; // Green for Safe
-        if (phishingCount > 0) {
+        const pieData = [summary.safe];
+        const pieColors = ['#52c41a'];
+
+        if (summary.phishing > 0) {
             pieLabels.push('Phishing');
-            pieData.push(phishingCount);
-            pieColors.push('#ff4d4f'); // Red for Phishing
+            pieData.push(summary.phishing);
+            pieColors.push('#ff4d4f');
         }
-        if (potentialCount > 0) {
+
+        if (summary.potential > 0) {
             pieLabels.push('Potential');
-            pieData.push(potentialCount);
-            pieColors.push('#faad14'); // Yellow for Potential
+            pieData.push(summary.potential);
+            pieColors.push('#faad14');
         }
+
         pieChart.data.labels = pieLabels;
         pieChart.data.datasets[0].data = pieData;
         pieChart.data.datasets[0].backgroundColor = pieColors;
         pieChart.update();
     }
-    
+
     if (barChart) {
-        const newData = Array.isArray(stats.dailyHistory) ? Array.from(stats.dailyHistory) : [0, 0, 0, 0, 0];
-        barChart.data.datasets[0].data = newData;
+        const trend = getDailyTrend();
+        barChart.data.labels = trend.labels;
+        barChart.data.datasets[0].data = trend.data;
         barChart.update('none');
     }
 }
@@ -495,7 +642,7 @@ function downloadPDF() {
         html2pdf().set({
             margin: 0.5,
             filename: 'SecureTrace_Report.pdf',
-            html2canvas: { scale: 3 }, // 🔥 HIGH QUALITY
+            html2canvas: { scale: 3 }, // high quality
             jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
         }).from(pdf).save().then(() => {
             pdf.style.display = "none"; // hide again
@@ -508,59 +655,62 @@ let pdfPieChart = null;
 let pdfBarChart = null;
 
 function updatePdfSummary(stats) {
-    const safeEmails = Math.max(0, stats.emails - (stats.phishing || 0) - (stats.potential || 0));
-    document.getElementById('pdfEmails').innerText = stats.emails;
-    document.getElementById('pdfSafe').innerText = safeEmails;
+    const summary = getThreatSummary();
+    document.getElementById('pdfEmails').innerText = summary.total;
+    document.getElementById('pdfSafe').innerText = summary.safe;
 }
 
 function buildPdfCharts(stats) {
     destroyPdfCharts();
 
-    const phishingCount = stats.phishing || 0;
-    const potentialCount = stats.potential || 0;
-    const safeEmails = Math.max(0, stats.emails - phishingCount - potentialCount);
-
+    const summary = getThreatSummary();
     const pieLabels = ['Safe'];
-    const pieData = [safeEmails];
-    const pieColors = ['#52c41a']; // Green for Safe
-    if (phishingCount > 0) {
+    const pieData = [summary.safe];
+    const pieColors = ['#52c41a'];
+
+    if (summary.phishing > 0) {
         pieLabels.push('Phishing');
-        pieData.push(phishingCount);
-        pieColors.push('#ff4d4f'); // Red for Phishing
+        pieData.push(summary.phishing);
+        pieColors.push('#ff4d4f');
     }
-    if (potentialCount > 0) {
+
+    if (summary.potential > 0) {
         pieLabels.push('Potential');
-        pieData.push(potentialCount);
-        pieColors.push('#faad14'); // Yellow for Potential
+        pieData.push(summary.potential);
+        pieColors.push('#faad14');
     }
 
     pdfPieChart = new Chart(document.getElementById('pdfPie'), {
         type: 'pie',
         data: {
             labels: pieLabels,
-            datasets: [{ 
+            datasets: [{
                 data: pieData,
                 backgroundColor: pieColors
             }]
         }
     });
 
-    const barData = Array.isArray(stats.dailyHistory) ? Array.from(stats.dailyHistory) : [0, 0, 0, 0, 0];
+    const trend = getDailyTrend();
 
     pdfBarChart = new Chart(document.getElementById('pdfBar'), {
         type: 'bar',
         data: {
-            labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+            labels: trend.labels,
             datasets: [{
-                label: 'Emails',
-                data: barData,
+                label: 'Emails Analyzed',
+                data: trend.data,
                 backgroundColor: '#2b6cff'
             }]
         },
         options: {
             scales: {
                 y: {
-                    beginAtZero: true
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0,
+                        stepSize: 1
+                    }
                 }
             }
         }
@@ -588,7 +738,7 @@ function initStats() {
             reports: 0,
             phishing: 0,
             potential: 0,
-            dailyHistory: [0, 0, 0, 0, 0]
+            dailyHistory: {}
         }));
     }
 }
@@ -606,14 +756,8 @@ function getStats() {
     stats.phishing = stats.phishing !== undefined ? stats.phishing : stats.alerts;
     stats.potential = stats.potential !== undefined ? stats.potential : 0;
     let needsSave = false;
-    if (!Array.isArray(stats.dailyHistory) || stats.dailyHistory.length !== 5) {
-        const history = [0, 0, 0, 0, 0];
-        if (stats.dailyEmails !== undefined) {
-            const dayIndex = new Date().getDay();
-            const bucket = dayIndex >= 1 && dayIndex <= 5 ? dayIndex - 1 : 4;
-            history[bucket] = stats.dailyEmails;
-        }
-        stats.dailyHistory = history;
+    if (!stats.dailyHistory || Array.isArray(stats.dailyHistory)) {
+        stats.dailyHistory = {};
         needsSave = true;
     }
     if (needsSave) {
@@ -629,8 +773,9 @@ function setStats(data) {
 /* ===== UPDATE UI ===== */
 function updateUI() {
     const stats = getStats();
+    const summary = getThreatSummary();
 
-    document.getElementById("emails").innerText = stats.emails;
+    document.getElementById("emails").innerText = summary.total;
     document.getElementById("transactions").innerText = stats.transactions;
     document.getElementById("reports").innerText = stats.reports;
 }
@@ -638,6 +783,15 @@ function updateUI() {
 function getRecentAnalysis() {
     const records = JSON.parse(localStorage.getItem('recentAnalysis')) || [];
     return records;
+}
+
+function escapeHtml(text) {
+    return String(text ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 function saveRecentAnalysis(records) {
@@ -659,22 +813,19 @@ function renderAnalysisTable() {
     if (records.length === 0) {
         body.innerHTML = `
             <tr>
-                <td>Today</td>
-                <td>live@securetrace</td>
-                <td>0 emails scanned</td>
-                <td>✅ Safe</td>
+                <td colspan="4">No recent email analysis yet</td>
             </tr>
         `;
         return;
     }
 
-    records.slice(0, 5).forEach(record => {
+    records.slice(0, 10).forEach(record => {
         body.innerHTML += `
             <tr>
-                <td>${record.date}</td>
-                <td>${record.sender}</td>
-                <td>${record.subject}</td>
-                <td>${record.status}</td>
+                <td>${escapeHtml(record.date)}</td>
+                <td>${escapeHtml(record.sender)}</td>
+                <td>${escapeHtml(record.subject)}</td>
+                <td>${escapeHtml(record.status)}</td>
             </tr>
         `;
     });
@@ -688,22 +839,19 @@ function renderPdfAnalysisTable() {
     if (records.length === 0) {
         body.innerHTML = `
             <tr>
-                <td>Today</td>
-                <td>live@securetrace</td>
-                <td>0 emails scanned</td>
-                <td>✅ Safe</td>
+                <td colspan="4">No recent email analysis yet</td>
             </tr>
         `;
         return;
     }
 
-    records.slice(0, 5).forEach(record => {
+    records.slice(0, 10).forEach(record => {
         body.innerHTML += `
             <tr>
-                <td>${record.date}</td>
-                <td>${record.sender}</td>
-                <td>${record.subject}</td>
-                <td>${record.status}</td>
+                <td>${escapeHtml(record.date)}</td>
+                <td>${escapeHtml(record.sender)}</td>
+                <td>${escapeHtml(record.subject)}</td>
+                <td>${escapeHtml(record.status)}</td>
             </tr>
         `;
     });
@@ -732,9 +880,10 @@ window.onload = function () {
     window.addEventListener('storage', refreshAnalysis);
     window.addEventListener('focus', refreshAnalysis);
     refreshAnalysis();
+    loadReportResults();
 };
 
-// 🧠 GLOBAL ACTIVITY LOGGER
+// GLOBAL ACTIVITY LOGGER
 function logActivity(message) {
     const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
 

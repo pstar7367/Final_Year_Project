@@ -35,6 +35,47 @@ body {
     gap: 8px;
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.sort-container {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: white;
+    padding: 8px 10px;
+    border: 1px solid #e3e8f5;
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.04);
+}
+
+.sort-container label {
+    color: #333;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.sort-container select {
+    border: 1px solid #d7deed;
+    border-radius: 6px;
+    background: #fff;
+    color: #222;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 7px 28px 7px 10px;
+    outline: none;
+}
+
+.sort-container select:focus {
+    border-color: #2b6cff;
+}
+
 button {
     padding: 10px 15px;
     border: none;
@@ -72,6 +113,15 @@ td {
     max-width: 250px;
 }
 
+td a {
+    display: inline-block;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+    white-space: nowrap;
+}
+
 th {
     background: #f0f4ff;
     color: #333;
@@ -90,6 +140,28 @@ tr {
     padding: 20px;
     color: #666;
 }
+
+@media (max-width: 768px) {
+    .header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .header-actions {
+        justify-content: flex-start;
+        width: 100%;
+    }
+
+    .sort-container {
+        width: 100%;
+    }
+
+    .sort-container select {
+        flex: 1;
+        min-width: 0;
+    }
+}
 </style>
 </head>
 
@@ -101,7 +173,17 @@ tr {
         Email Scan Results (<span id="totalCount">0</span>)
     </h2>
 
-    <div>
+    <div class="header-actions">
+        <div class="sort-container">
+            <label for="sortOrder">Sort By:</label>
+            <select id="sortOrder" onchange="applySorting()">
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+                <option value="az">Sender A-Z</option>
+                <option value="za">Sender Z-A</option>
+            </select>
+        </div>
+
         <button onclick="loadResults()">
             <i data-lucide="refresh-cw"></i>
             Refresh
@@ -139,6 +221,7 @@ tr {
 </div>
 
 <script>
+let currentResults = [];
 lucide.createIcons();
 /* ================= ACTIVITY LOGGER ================= */
 function logActivity(message) {
@@ -163,7 +246,7 @@ function initStats() {
             reports: 0,
             phishing: 0,
             potential: 0,
-            dailyHistory: [0, 0, 0, 0, 0]
+            dailyHistory: {}
         }));
     }
 }
@@ -178,14 +261,8 @@ function getStats() {
     stats.phishing = stats.phishing !== undefined ? stats.phishing : stats.alerts;
     stats.potential = stats.potential !== undefined ? stats.potential : 0;
     let needsSave = false;
-    if (!Array.isArray(stats.dailyHistory) || stats.dailyHistory.length !== 5) {
-        const history = [0, 0, 0, 0, 0];
-        if (stats.dailyEmails !== undefined) {
-            const dayIndex = new Date().getDay();
-            const bucket = dayIndex >= 1 && dayIndex <= 5 ? dayIndex - 1 : 4;
-            history[bucket] = stats.dailyEmails;
-        }
-        stats.dailyHistory = history;
+    if (!stats.dailyHistory || Array.isArray(stats.dailyHistory)) {
+        stats.dailyHistory = {};
         needsSave = true;
     }
     if (needsSave) {
@@ -216,18 +293,80 @@ function addRecentAnalysis(record) {
 function updateScanStats(emailCount, phishingCount, potentialCount) {
     initStats();
     const stats = getStats();
+    const today = getEmailDateKey({ Date_Timestamp: Date.now() });
+
     stats.emails += emailCount;
     stats.phishing += phishingCount;
     stats.potential += potentialCount;
-    const dayIndex = new Date().getDay();
-    const bucket = dayIndex >= 1 && dayIndex <= 5 ? dayIndex - 1 : 4;
-    if (!Array.isArray(stats.dailyHistory)) {
-        stats.dailyHistory = [0, 0, 0, 0, 0];
+
+    if (!stats.dailyHistory || Array.isArray(stats.dailyHistory)) {
+        stats.dailyHistory = {};
     }
-    stats.dailyHistory[bucket] = (stats.dailyHistory[bucket] || 0) + emailCount;
+
+    stats.dailyHistory[today] = (stats.dailyHistory[today] || 0) + emailCount;
     stats.alerts = stats.phishing + stats.potential;
     setStats(stats);
     logActivity(`Updated stats: +${emailCount} emails, +${phishingCount} phishing, +${potentialCount} potential`);
+}
+
+function syncReportDataFromResults(results) {
+    initStats();
+
+    const stats = getStats();
+    const safeResults = Array.isArray(results) ? results : [];
+    const phishingCount = safeResults.filter(e => e.Category === "PHISHING").length;
+    const potentialCount = safeResults.filter(e => e.Category === "POTENTIAL_PHISHING").length;
+    const dailyHistory = {};
+
+    safeResults.forEach(email => {
+        const key = getEmailDateKey(email);
+        if (!key) return;
+        dailyHistory[key] = (dailyHistory[key] || 0) + 1;
+    });
+
+    stats.emails = safeResults.length;
+    stats.phishing = phishingCount;
+    stats.potential = potentialCount;
+    stats.alerts = phishingCount + potentialCount;
+    stats.dailyHistory = dailyHistory;
+    localStorage.setItem('emailAnalysisResults', JSON.stringify(safeResults));
+    setStats(stats);
+
+    const recentRecords = [...safeResults]
+        .sort((a, b) => getEmailTime(b) - getEmailTime(a))
+        .slice(0, 10)
+        .map(email => ({
+            date: email.Date || "-",
+            sender: email.From || "-",
+            subject: email.Subject || "-",
+            status: getEmailStatusLabel(email)
+        }));
+
+    saveRecentAnalysis(recentRecords);
+    logActivity(`Synced report data from ${safeResults.length} email results`);
+}
+
+function getEmailTime(email) {
+    return Number(email?.Date_Timestamp || Date.parse(email?.Date) || 0);
+}
+
+function getEmailDateKey(email) {
+    const time = getEmailTime(email);
+    if (!time) return "";
+
+    const date = new Date(time);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+}
+
+function getEmailStatusLabel(email) {
+    if (email.Category_Label) return email.Category_Label;
+    if (email.Category === "PHISHING") return "Phishing";
+    if (email.Category === "POTENTIAL_PHISHING") return "Potential Phishing";
+    return "Safe";
 }
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzPxR7fokp5FQr5YDmJmbqOvRaF3h6gyL-CxIWysyvTBj_ncCewz44oXy3ARUMHXkrxhw/exec";
@@ -238,18 +377,19 @@ let lastCount = 0;
 
 // 🚀 LOAD RESULTS
 function loadResults() {
-    logActivity("Started email scan");
-    logActivity("Manual refresh triggered");
     if (loading) return;
     loading = true;
 
-    logActivity("Started email scan");
+    const sortType =
+        document.getElementById("sortOrder")?.value || "newest";
+
+    logActivity("Loading saved email results");
 
     const table = document.getElementById("resultsTable");
 
     table.innerHTML = `
         <tr>
-            <td colspan="9" class="center">Loading...</td>
+            <td colspan="9" class="center">Checking latest emails...</td>
         </tr>
     `;
 
@@ -259,34 +399,43 @@ function loadResults() {
     const script = document.createElement("script");
     script.id = "jsonpScript";
 
-    script.src = SCRIPT_URL + "?action=scan&callback=handleData&t=" + Date.now();
+    script.src =
+        SCRIPT_URL +
+        "?action=scanAndGetResults&callback=handleData&sort=" +
+        encodeURIComponent(sortType) +
+        "&t=" +
+        Date.now();
 
     script.onerror = function () {
-        showError("Failed to load data");
+        loading = false;
+        showError("Failed to load email results");
     };
 
+    clearTimeout(timeoutRef);
+
     timeoutRef = setTimeout(() => {
-        showError("Still loading... try refresh");
-    }, 12000);
+        const oldScript = document.getElementById("jsonpScript");
+        if (oldScript) oldScript.remove();
+
+        loading = false;
+        showError("Loading is taking too long. Try Refresh again.");
+    }, 10000);
 
     document.body.appendChild(script);
 }
 
 // ✅ HANDLE DATA
 function handleData(data) {
+    currentResults = Array.isArray(data) ? data : [];
+    data = currentResults;
+
     const phishingCount = data.filter(e => e.Category === "PHISHING").length;
     const potentialCount = data.filter(e => e.Category === "POTENTIAL_PHISHING").length;
     const alertCount = phishingCount + potentialCount;
     logActivity(`Scanned ${data.length} emails, detected ${alertCount} alerts`);
     clearTimeout(timeoutRef);
 
-    updateScanStats(data.length, phishingCount, potentialCount);
-    addRecentAnalysis({
-        date: new Date().toLocaleString(),
-        sender: 'Gmail scan',
-        subject: `${data.length} emails scanned`,
-        status: alertCount > 0 ? `🚨 ${alertCount} alerts` : '✅ Safe'
-    });
+    syncReportDataFromResults(currentResults);
     document.getElementById("totalCount").innerText = data.length;
 
     // 🔔 Notify only if NEW scan result comes in
@@ -310,47 +459,117 @@ function handleData(data) {
         return;
     }
 
-    table.innerHTML = "";
-
-    data.slice(-50).reverse().forEach(email => {
-
-        let statusClass = "status-safe";
-
-        if (email.Category === "PHISHING") statusClass = "status-danger";
-        else if (email.Category === "POTENTIAL_PHISHING") statusClass = "status-warning";
-
-        const row = `
-<tr>
-<td>${email.Date || "-"}</td>
-<td>${email.From || "-"}</td>
-<td>${email.Subject || "-"}</td>
-<td class="${statusClass}">${email.Category || "-"}</td>
-<td>${email.Risk || "-"}</td>
-<td>${email.Confidence || "-"}</td>
-<td>${formatUrls(email.URLs)}</td>
-<td>${email.Thread_ID || "-"}</td>
-<td>${email.Message_ID || "-"}</td>
-</tr>
-`;
-
-        table.innerHTML += row;
-    });
+    applySorting();
 
     lucide.createIcons();
     loading = false;
+}
+
+function applySorting() {
+    if (!currentResults.length) return;
+
+    const sortType =
+        document.getElementById("sortOrder")?.value || "newest";
+
+    const getTime = email =>
+        Number(email.Date_Timestamp || Date.parse(email.Date) || 0);
+
+    let sorted = [...currentResults];
+
+    switch (sortType) {
+        case "newest":
+            sorted.sort((a, b) => getTime(b) - getTime(a));
+            break;
+
+        case "oldest":
+            sorted.sort((a, b) => getTime(a) - getTime(b));
+            break;
+
+        case "az":
+            sorted.sort((a, b) =>
+                (a.From || "").localeCompare(b.From || "")
+            );
+            break;
+
+        case "za":
+            sorted.sort((a, b) =>
+                (b.From || "").localeCompare(a.From || "")
+            );
+            break;
+    }
+
+    renderTable(sorted);
+}
+
+function renderTable(data) {
+    const table = document.getElementById("resultsTable");
+    table.innerHTML = "";
+
+    data.forEach(email => {
+        let statusClass = "status-safe";
+
+        if (email.Category === "PHISHING")
+            statusClass = "status-danger";
+        else if (email.Category === "POTENTIAL_PHISHING")
+            statusClass = "status-warning";
+
+        table.innerHTML += `
+        <tr>
+            <td>${email.Date || "-"}</td>
+            <td>${email.From || "-"}</td>
+            <td>${email.Subject || "-"}</td>
+            <td class="${statusClass}">${email.Category_Label || email.Category || "-"}</td>
+            <td>${email.Risk || "-"}</td>
+            <td>${email.Confidence || "-"}</td>
+            <td>${formatUrls(email.URLs)}</td>
+            <td>${email.Thread_ID || "-"}</td>
+            <td>${email.Message_ID || "-"}</td>
+        </tr>
+        `;
+    });
 }
 
 // 🔗 FORMAT URLS (clean + clickable)
 function formatUrls(urls) {
     if (!urls) return "-";
 
-    return urls.split(",").map(url => {
+    return urls.split(/[;,]+/).map(url => {
         url = url.trim();
-        return `<a href="${url}" target="_blank">${url}</a>`;
-    }).join("<br>");
+        if (!url) return "";
+
+        const safeUrl = escapeHtml(url);
+        const displayText = escapeHtml(getUrlDisplayText(url));
+
+        return `<a href="${safeUrl}" target="_blank" title="${safeUrl}">${displayText}</a>`;
+    }).filter(Boolean).join("<br>");
 }
 
 // ❌ ERROR DISPLAY
+function getUrlDisplayText(url) {
+    try {
+        const parsed = new URL(url);
+        const path = parsed.pathname === "/" ? "" : parsed.pathname;
+        let display = `${parsed.hostname}${path}`;
+
+        if (display.length > 32) {
+            display = display.slice(0, 29) + "...";
+        }
+
+        return display;
+    } catch (err) {
+        return url.length > 32 ? url.slice(0, 29) + "..." : url;
+    }
+}
+
+function escapeHtml(text) {
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
 function showError(message) {
     const table = document.getElementById("resultsTable");
 
