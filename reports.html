@@ -208,6 +208,45 @@ body {
     margin-top: 12px;
 }
 
+.evaluation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 15px;
+}
+
+.evaluation-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.secondary-btn {
+    background: #eef4ff;
+    color: #2b6cff;
+    border: 1px solid #cfe0ff;
+    padding: 10px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.evaluation-status {
+    color: #666;
+    font-size: 13px;
+    margin-top: 8px;
+}
+
+.evaluation-meta {
+    color: #666;
+    font-size: 13px;
+    margin-top: 4px;
+}
+
 /* Table */
 .table-box {
     margin-top: 25px;
@@ -306,44 +345,6 @@ th, td {
 
     <br><hr><br>
 
-    <!-- MODEL PERFORMANCE -->
-    <h2>Model Performance</h2>
-    <ul style="line-height:1.8;">
-        <li><strong>Evaluated Emails:</strong> <span id="pdfEvaluated">0</span></li>
-        <li><strong>True Positives:</strong> <span id="pdfTp">0</span></li>
-        <li><strong>True Negatives:</strong> <span id="pdfTn">0</span></li>
-        <li><strong>False Positives:</strong> <span id="pdfFp">0</span></li>
-        <li><strong>False Negatives:</strong> <span id="pdfFn">0</span></li>
-        <li><strong>Accuracy:</strong> <span id="pdfAccuracy">0%</span></li>
-        <li><strong>Precision:</strong> <span id="pdfPrecision">0%</span></li>
-        <li><strong>Recall:</strong> <span id="pdfRecall">0%</span></li>
-        <li><strong>F1 Score:</strong> <span id="pdfF1">0%</span></li>
-    </ul>
-
-    <table border="1" cellspacing="0" cellpadding="8" width="100%">
-        <thead>
-            <tr>
-                <th></th>
-                <th>Actual Phishing</th>
-                <th>Actual Safe</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr>
-                <th>Predicted Phishing</th>
-                <td id="pdfMatrixTp">0</td>
-                <td id="pdfMatrixFp">0</td>
-            </tr>
-            <tr>
-                <th>Predicted Safe</th>
-                <td id="pdfMatrixFn">0</td>
-                <td id="pdfMatrixTn">0</td>
-            </tr>
-        </tbody>
-    </table>
-
-    <br><hr><br>
-
     <!-- PIE -->
     <h2>Threat Distribution</h2>
     <canvas id="pdfPie" style="max-width:500px;"></canvas>
@@ -356,11 +357,98 @@ th, td {
 
     <br><hr><br>
 
-    <!-- PERFORMANCE CHART -->
-    <h2>Performance Metrics</h2>
-    <canvas id="pdfPerformanceChart" style="max-width:500px;"></canvas>
+    <h2>Prediction and Tracing Metrics</h2>
+    <canvas id="pdfMetricChart" style="max-width:500px; margin-bottom:24px;"></canvas>
+    <canvas id="pdfTraceChart" style="max-width:500px;"></canvas>
 
     <br><hr><br>
+
+    <!-- PERFORMANCE PDF METRICS -->
+    <h2>Performance Evaluation</h2>
+    <table border="1" cellspacing="0" cellpadding="8" width="100%" style="margin-bottom:20px;">
+        <thead>
+            <tr>
+                <th>Metric</th>
+                <th>Formula</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <th>Labelled Evaluation Emails</th>
+                <td>Actual labelled records used for classification</td>
+                <td id="pdfEvaluated">0</td>
+            </tr>
+            <tr>
+                <th>True Positive (TP)</th>
+                <td>Actual phishing and predicted phishing</td>
+                <td id="pdfTp">0</td>
+            </tr>
+            <tr>
+                <th>True Negative (TN)</th>
+                <td>Actual safe and predicted safe</td>
+                <td id="pdfTn">0</td>
+            </tr>
+            <tr>
+                <th>False Positive (FP)</th>
+                <td>Actual safe but predicted phishing</td>
+                <td id="pdfFp">0</td>
+            </tr>
+            <tr>
+                <th>False Negative (FN)</th>
+                <td>Actual phishing but predicted safe</td>
+                <td id="pdfFn">0</td>
+            </tr>
+            <tr>
+                <th>Accuracy</th>
+                <td>(TP + TN) / (TP + TN + FP + FN)</td>
+                <td id="pdfAccuracy">0%</td>
+            </tr>
+            <tr>
+                <th>Precision</th>
+                <td>TP / (TP + FP)</td>
+                <td id="pdfPrecision">0%</td>
+            </tr>
+            <tr>
+                <th>Recall</th>
+                <td>TP / (TP + FN)</td>
+                <td id="pdfRecall">0%</td>
+            </tr>
+            <tr>
+                <th>F1 Score</th>
+                <td>2 x (Precision x Recall) / (Precision + Recall)</td>
+                <td id="pdfF1">0%</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Session Timing Metrics</h2>
+    <table border="1" cellspacing="0" cellpadding="8" width="100%" style="margin-bottom:20px;">
+        <thead>
+            <tr>
+                <th>Metric</th>
+                <th>Formula Basis</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <th>Prediction Response Time</th>
+                <td>Total prediction time / number of emails</td>
+                <td id="pdfPrt">0.00s</td>
+            </tr>
+            <tr>
+                <th>Blockchain Retrieval Time</th>
+                <td>Total retrieval time / number of requests</td>
+                <td id="pdfBrt">0.00s</td>
+            </tr>
+            <tr>
+                <th>System Throughput</th>
+                <td>Total emails processed / processing time</td>
+                <td id="pdfThroughput">0.000 emails/s</td>
+            </tr>
+        </tbody>
+    </table>
 
     <!-- TABLE -->
     <h2>Recent Analysis</h2>
@@ -403,7 +491,8 @@ th, td {
             <h2>Security Report</h2>
         </div>
         <div>
-            <div id="syncStatus" style="font-size:13px; color:#666; margin-bottom:8px; text-align:right;">Waiting for email sync...</div>
+            <div id="syncStatus" style="font-size:13px; color:#666; margin-bottom:4px; text-align:right;">Waiting for email sync...</div>
+            <div id="scanSummary" style="font-size:13px; color:#666; margin-bottom:8px; text-align:right;">Displayed 0 emails | 0 scanned this sync</div>
             <button class="download-btn" onclick="loadReportResults()">
                 <i data-lucide="refresh-cw"></i> Sync Latest
             </button>
@@ -457,52 +546,88 @@ th, td {
             <canvas id="barChart"></canvas>
         </div>
 
-        <div class="chart-box full-width">
-            <h3>Performance Metrics</h3>
-            <canvas id="performanceChart"></canvas>
-        </div>
     </div>
 
-    <!-- MODEL PERFORMANCE -->
+    <!-- PERFORMANCE EVALUATION -->
     <div class="performance-box">
-        <h3>Model Performance</h3>
+        <div class="evaluation-header">
+            <div>
+                <h3>Performance Evaluation and Metrics</h3>
+                <p class="evaluation-meta">
+                    Evaluation of prediction capability, blockchain transaction tracing, and operational efficiency.
+                </p>
+                <p class="evaluation-status" id="kaggleEvaluationStatus">Calculated from current system values.</p>
+            </div>
+        </div>
 
         <div class="performance-grid">
             <div class="metric-card">
-                <h4>Evaluated Emails</h4>
-                <strong id="evaluatedCount">0</strong>
+                <h4>Latest Emails</h4>
+                <strong id="kaggleTotalSamples">0</strong>
             </div>
             <div class="metric-card">
-                <h4>True Positives</h4>
-                <strong id="tpCount">0</strong>
+                <h4>Phishing Prediction Activity (PPA)</h4>
+                <strong id="kaggleTpCount">0</strong>
             </div>
             <div class="metric-card">
-                <h4>True Negatives</h4>
-                <strong id="tnCount">0</strong>
+                <h4>Legitimate Email Preservation Rate (LEPR)</h4>
+                <strong id="kaggleTnCount">0</strong>
             </div>
             <div class="metric-card">
-                <h4>False Positives</h4>
-                <strong id="fpCount">0</strong>
+                <h4>Phishing Prediction Proportion (PPP)</h4>
+                <strong id="kaggleFpCount">0</strong>
             </div>
             <div class="metric-card">
-                <h4>False Negatives</h4>
-                <strong id="fnCount">0</strong>
+                <h4>Phishing Detection Rate (PDRR)</h4>
+                <strong id="kaggleFnCount">0</strong>
+            </div>
+            <div class="metric-card">
+                <h4>Transfer Learning Balance Score (TLF1)</h4>
+                <strong id="kaggleAccuracyScore">0%</strong>
+            </div>
+            <div class="metric-card">
+                <h4>Wallet Tracing Accuracy (WTA)</h4>
+                <strong id="kagglePrecisionScore">0%</strong>
+            </div>
+            <div class="metric-card">
+                <h4>Transaction Path Completeness (TPC)</h4>
+                <strong id="kaggleRecallScore">0%</strong>
+            </div>
+            <div class="metric-card">
+                <h4>Suspicious Wallet Detection Rate (SWDR)</h4>
+                <strong id="kaggleF1Score">0%</strong>
+            </div>
+            <div class="metric-card">
+                <h4>True Positive (TP)</h4>
+                <strong id="kaggleCardTp">0</strong>
+            </div>
+            <div class="metric-card">
+                <h4>True Negative (TN)</h4>
+                <strong id="kaggleCardTn">0</strong>
+            </div>
+            <div class="metric-card">
+                <h4>False Positive (FP)</h4>
+                <strong id="kaggleCardFp">0</strong>
+            </div>
+            <div class="metric-card">
+                <h4>False Negative (FN)</h4>
+                <strong id="kaggleCardFn">0</strong>
             </div>
             <div class="metric-card">
                 <h4>Accuracy</h4>
-                <strong id="accuracyScore">0%</strong>
+                <strong id="kaggleCardAccuracy">0%</strong>
             </div>
             <div class="metric-card">
                 <h4>Precision</h4>
-                <strong id="precisionScore">0%</strong>
+                <strong id="kaggleCardPrecision">0%</strong>
             </div>
             <div class="metric-card">
                 <h4>Recall</h4>
-                <strong id="recallScore">0%</strong>
+                <strong id="kaggleCardRecall">0%</strong>
             </div>
             <div class="metric-card">
                 <h4>F1 Score</h4>
-                <strong id="f1Score">0%</strong>
+                <strong id="kaggleCardF1">0%</strong>
             </div>
         </div>
 
@@ -510,28 +635,103 @@ th, td {
             <table class="matrix-table">
                 <thead>
                     <tr>
-                        <th></th>
-                        <th>Actual Phishing</th>
-                        <th>Actual Safe</th>
+                        <th>Classification Metric</th>
+                        <th>Formula Basis</th>
+                        <th>Result</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <th>Predicted Phishing</th>
-                        <td id="matrixTp">0</td>
-                        <td id="matrixFp">0</td>
+                        <th>Labelled Evaluation Emails</th>
+                        <td>Emails with an Actual Label selected</td>
+                        <td id="classificationEvaluatedCount">0</td>
                     </tr>
                     <tr>
-                        <th>Predicted Safe</th>
-                        <td id="matrixFn">0</td>
-                        <td id="matrixTn">0</td>
+                        <th>True Positive (TP)</th>
+                        <td>Actual phishing and predicted phishing</td>
+                        <td id="classificationTp">0</td>
+                    </tr>
+                    <tr>
+                        <th>True Negative (TN)</th>
+                        <td>Actual safe and predicted safe</td>
+                        <td id="classificationTn">0</td>
+                    </tr>
+                    <tr>
+                        <th>False Positive (FP)</th>
+                        <td>Actual safe but predicted phishing</td>
+                        <td id="classificationFp">0</td>
+                    </tr>
+                    <tr>
+                        <th>False Negative (FN)</th>
+                        <td>Actual phishing but predicted safe</td>
+                        <td id="classificationFn">0</td>
+                    </tr>
+                    <tr>
+                        <th>Accuracy</th>
+                        <td>(TP + TN) / (TP + TN + FP + FN)</td>
+                        <td id="classificationAccuracy">0%</td>
+                    </tr>
+                    <tr>
+                        <th>Precision</th>
+                        <td>TP / (TP + FP)</td>
+                        <td id="classificationPrecision">0%</td>
+                    </tr>
+                    <tr>
+                        <th>Recall</th>
+                        <td>TP / (TP + FN)</td>
+                        <td id="classificationRecall">0%</td>
+                    </tr>
+                    <tr>
+                        <th>F1 Score</th>
+                        <td>2 x (Precision x Recall) / (Precision + Recall)</td>
+                        <td id="classificationF1">0%</td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
+        <div class="matrix-wrap">
+            <table class="matrix-table">
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Formula Basis</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <th>Prediction Response Time</th>
+                        <td>Total prediction time / number of emails</td>
+                        <td id="sessionSafeRate">0s</td>
+                    </tr>
+                    <tr>
+                        <th>Blockchain Retrieval Time</th>
+                        <td>Total retrieval time / number of requests</td>
+                        <td id="sessionPhishingRate">0s</td>
+                    </tr>
+                    <tr>
+                        <th>System Throughput</th>
+                        <td>Total emails processed / processing time</td>
+                        <td id="sessionPotentialRate">0 emails/s</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="charts" style="margin-top:20px;">
+            <div class="chart-box full-width">
+                <h3>Transfer Learning Prediction Metrics</h3>
+                <canvas id="kaggleMetricChart"></canvas>
+            </div>
+            <div class="chart-box">
+                <h3>Blockchain Tracing Metrics</h3>
+                <canvas id="kaggleConfusionChart"></canvas>
+            </div>
+        </div>
+
         <p class="metric-note">
-            Metrics use emails that have an Actual Label selected in Email Scan Results.
+            Email metrics are calculated from the latest 50 scanned email categories. PPP, PDRR, and TLF1 remain 0% when the current session contains no emails categorized as phishing. Blockchain tracing metrics are populated when the external transaction analytics API URL is configured.
         </p>
     </div>
 
@@ -561,10 +761,16 @@ lucide.createIcons();
 let pieChart = null;
 let barChart = null;
 let performanceChart = null;
+let kaggleMetricChart = null;
+let kaggleConfusionChart = null;
 let reportResults = [];
+let latestScannedCount = 0;
 let reportLoading = false;
 let reportTimeoutRef = null;
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzPxR7fokp5FQr5YDmJmbqOvRaF3h6gyL-CxIWysyvTBj_ncCewz44oXy3ARUMHXkrxhw/exec";
+const SESSION_METRICS_LIMIT = 50;
+const TRANSACTION_ANALYTICS_API_URL = "";
+let latestTransactionMetrics = null;
 
 function resetProjectCountsOnce() {
     const resetKey = "secureTraceResetVersion";
@@ -572,7 +778,8 @@ function resetProjectCountsOnce() {
 
     if (localStorage.getItem(resetKey) === resetVersion) return;
 
-    localStorage.removeItem("emailAnalysisResults");
+    // Don't clear emailAnalysisResults here - it contains the latest scan data for dashboard and reports.
+    // localStorage.removeItem("emailAnalysisResults");
     localStorage.removeItem("recentAnalysis");
     localStorage.setItem("stats", JSON.stringify({
         emails: 0,
@@ -586,13 +793,46 @@ function resetProjectCountsOnce() {
     localStorage.setItem(resetKey, resetVersion);
 }
 
-function getEmailAnalysisResults() {
-    if (Array.isArray(reportResults) && reportResults.length > 0) {
-        return reportResults.slice(0, 50);
+function mergeActualLabelsFromUrl() {
+    const hash = window.location.hash || '';
+    if (!hash.startsWith('#labels=')) return;
+
+    try {
+        const encoded = hash.slice('#labels='.length);
+        const payload = decodeURIComponent(encoded);
+        const sharedLabels = JSON.parse(payload);
+        if (sharedLabels && typeof sharedLabels === 'object') {
+            const labels = getActualLabels();
+            Object.assign(labels, sharedLabels);
+            localStorage.setItem('actualEmailLabels', JSON.stringify(labels));
+        }
+    } catch (err) {
+        console.warn('Unable to merge labels from reports URL', err);
     }
 
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+}
+
+function getAllEmailAnalysisResults() {
     const records = JSON.parse(localStorage.getItem('emailAnalysisResults')) || [];
-    return Array.isArray(records) ? records.slice(0, 50) : [];
+    return Array.isArray(records) ? records : [];
+}
+
+function getEmailAnalysisResults() {
+    const records = getAllEmailAnalysisResults().slice(0, 50);
+
+    console.log('[RESULTS] Starting with', records.length, 'records (from emailAnalysisResults cache)');
+
+    // Always merge saved dropdown labels into the cached records.
+    const labels = getActualLabelsFromAllSources();
+    const mapped = records.map(record => {
+        // Prefer whatever is already on the record, otherwise use label cache lookup.
+        const actualLabel = normalizeActualLabel(record?.Actual_Label || getStoredActualLabel(record, labels));
+        return actualLabel ? { ...record, Actual_Label: actualLabel } : record;
+    });
+
+    console.log('[RESULTS] Returning', mapped.length, 'records with labels applied');
+    return mapped;
 }
 
 function normalizeCategory(record) {
@@ -734,16 +974,63 @@ function loadReportResults() {
 
 function handleReportResults(data) {
     const storedLabels = getActualLabelsFromAllSources();
-    reportResults = extractEmailResults(data).slice(0, 50).map(email => {
-        const actualLabel = normalizeActualLabel(email?.Actual_Label || getStoredActualLabel(email, storedLabels));
+    const previousResults = getAllEmailAnalysisResults();
+    console.log('[REPORT] Received new data with', extractEmailResults(data).length, 'records');
+    console.log('[REPORT] Previous results have', previousResults.length, 'records with labels');
+    
+    const fullResults = extractEmailResults(data).map(email => {
+        // Try to find matching previous record by email keys
+        let existingLabel = null;
+        const emailKeys = getEmailKeys(email);
+        console.log('[REPORT] Processing email with keys:', emailKeys);
+        
+        const previousRecord = previousResults.find(prev => {
+            const prevKeys = getEmailKeys(prev);
+            return prevKeys.some(pk => emailKeys.some(ek => pk === ek));
+        });
+        
+        if (previousRecord && previousRecord.Actual_Label) {
+            existingLabel = previousRecord.Actual_Label;
+            console.log('[REPORT] Found matching previous record with label:', existingLabel);
+        }
+        
+        // Fallback: try stored labels
+        if (!existingLabel) {
+            existingLabel = getStoredActualLabel(email, storedLabels);
+            if (existingLabel) {
+                console.log('[REPORT] Found label in storedLabels:', existingLabel);
+            }
+        }
+        
+        const actualLabel = normalizeActualLabel(email?.Actual_Label || existingLabel);
+        console.log('[REPORT] Final actual label for email:', actualLabel);
         return actualLabel ? { ...email, Actual_Label: actualLabel } : email;
     });
+    
+    if (fullResults.length > 0) {
+        reportResults = fullResults.slice(0, 50);
+        localStorage.setItem('emailAnalysisResults', JSON.stringify(fullResults));
+        console.log('[REPORT] Updated reportResults and emailAnalysisResults with', fullResults.length, 'total records');
+        syncRecentAnalysisFromResults(reportResults);
+    } else {
+        reportResults = getAllEmailAnalysisResults().slice(0, 50);
+        console.log('[REPORT] No new results, using cached');
+    }
     clearTimeout(reportTimeoutRef);
     reportLoading = false;
-    localStorage.setItem('emailAnalysisResults', JSON.stringify(reportResults));
-    syncRecentAnalysisFromResults(reportResults);
-    setSyncStatus(`Last sync: ${new Date().toLocaleTimeString()} | ${reportResults.length} emails received`);
+    syncSystemPerformance(data);
+    latestScannedCount = Number(data.scanned || 0);
+    setSyncStatus(`Last sync: ${new Date().toLocaleTimeString()} | ${reportResults.length} emails displayed`);
+    updateScanSummary();
     refreshAnalysis();
+}
+
+function updateScanSummary() {
+    const displayed = reportResults.length || (JSON.parse(localStorage.getItem('emailAnalysisResults')) || []).length;
+    const summary = document.getElementById('scanSummary');
+    if (summary) {
+        summary.innerText = `Displayed ${displayed} emails | ${latestScannedCount} scanned this sync`;
+    }
 }
 
 function extractEmailResults(response) {
@@ -785,7 +1072,7 @@ function extractEmailResults(response) {
 }
 
 function syncRecentAnalysisFromResults(results) {
-    const records = [...results]
+    const records = cleanRecentAnalysisRecords([...results]
         .sort((a, b) => getRecordTime(b) - getRecordTime(a))
         .slice(0, 10)
         .map(email => ({
@@ -793,7 +1080,7 @@ function syncRecentAnalysisFromResults(results) {
             sender: email.From || '-',
             subject: email.Subject || '-',
             status: getStatusLabel(email)
-        }));
+        })));
 
     saveRecentAnalysis(records);
 }
@@ -857,14 +1144,22 @@ function getEmailKeys(email) {
     ];
 
     const normalizedIdKeys = [...new Set(idKeys.map(key => String(key || '').trim()).filter(Boolean))];
-    if (normalizedIdKeys.length > 0) return normalizedIdKeys;
+    if (normalizedIdKeys.length > 0) {
+        console.log('[KEYS] Found ID keys:', normalizedIdKeys);
+        return normalizedIdKeys;
+    }
 
-    const fallbackKey = `${getEmailField(email, ['Date', 'Email Date']) || ''}-${getEmailField(email, ['From', 'Sender', 'Email From']) || ''}-${getEmailField(email, ['Subject', 'Email Subject']) || ''}`.trim();
-    return fallbackKey.replace(/-/g, '') ? [fallbackKey] : [];
+    const date = getEmailField(email, ['Date', 'Email Date']) || 'unknown-date';
+    const from = getEmailField(email, ['From', 'Sender', 'Email From']) || 'unknown-sender';
+    const subject = getEmailField(email, ['Subject', 'Email Subject']) || 'unknown-subject';
+    const fallbackKey = `${date}|${from}|${subject}`;
+    console.log('[KEYS] Generated fallback key:', fallbackKey);
+    return [fallbackKey];
 }
 
 function getActualLabelsFromAllSources() {
     const labels = { ...getActualLabels() };
+    console.log('[LABELS] Direct actualEmailLabels:', labels);
     const cachedRecords = JSON.parse(localStorage.getItem('emailAnalysisResults')) || [];
 
     if (Array.isArray(cachedRecords)) {
@@ -874,10 +1169,12 @@ function getActualLabelsFromAllSources() {
 
             getEmailKeys(email).forEach(key => {
                 labels[key] = actualLabel;
+                console.log('[LABELS] Added from cached record:', key, '=', actualLabel);
             });
         });
     }
 
+    console.log('[LABELS] Final merged labels:', labels);
     return labels;
 }
 
@@ -890,11 +1187,11 @@ function normalizeActualLabel(value) {
 }
 
 function getActualLabel(email) {
-    return (
-        normalizeActualLabel(getEmailField(email, ['Actual_Label', 'Actual Label', 'Actual', 'Ground Truth', 'True Label'])) ||
-        normalizeActualLabel(getStoredActualLabel(email)) ||
-        getPredictedLabelAsActual(email)
-    );
+    const fieldValue = getEmailField(email, ['Actual_Label', 'Actual Label', 'Actual', 'Ground Truth', 'True Label']);
+    const storedValue = getStoredActualLabel(email);
+    const result = normalizeActualLabel(fieldValue || storedValue);
+    console.log('[LABEL] getActualLabel for email key:', getEmailKeys(email)[0], 'fieldValue:', fieldValue, 'storedValue:', storedValue, 'result:', result);
+    return result;
 }
 
 function getPredictedLabelAsActual(email) {
@@ -903,7 +1200,9 @@ function getPredictedLabelAsActual(email) {
 
 function getStoredActualLabel(email, labels = getActualLabelsFromAllSources()) {
     const keys = getEmailKeys(email);
+    console.log('[LOOKUP] Looking up keys:', keys, 'in labels');
     const matchedKey = keys.find(key => labels[key]);
+    console.log('[LOOKUP] Matched key:', matchedKey, 'value:', matchedKey ? labels[matchedKey] : 'not found');
     return matchedKey ? labels[matchedKey] : "";
 }
 
@@ -912,43 +1211,127 @@ function isPredictedPhishing(email) {
     return category === 'PHISHING' || category === 'POTENTIAL_PHISHING';
 }
 
-function calculateModelPerformance() {
-    const records = getEmailAnalysisResults();
-    const totals = {
-        tp: 0,
-        tn: 0,
-        fp: 0,
-        fn: 0,
-        evaluated: 0
+const MODEL_PERFORMANCE_KEY = 'modelPerformance';
+
+function initModelPerformance() {
+    if (!localStorage.getItem(MODEL_PERFORMANCE_KEY)) {
+        setModelPerformance({
+            tp: 0,
+            tn: 0,
+            fp: 0,
+            fn: 0,
+            accuracy: 0,
+            precision: 0,
+            recall: 0,
+            f1: 0
+        });
+    }
+}
+
+function getModelPerformance() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(MODEL_PERFORMANCE_KEY)) || {};
+        return {
+            tp: Number(stored.tp || 0),
+            tn: Number(stored.tn || 0),
+            fp: Number(stored.fp || 0),
+            fn: Number(stored.fn || 0),
+            total: Number(stored.total || 0),
+            accuracy: Number(stored.accuracy || 0),
+            precision: Number(stored.precision || 0),
+            recall: Number(stored.recall || 0),
+            f1: Number(stored.f1 || 0)
+        };
+    } catch (err) {
+        console.warn('Unable to parse model performance from localStorage', err);
+        return {
+            tp: 0,
+            tn: 0,
+            fp: 0,
+            fn: 0,
+            total: 0,
+            accuracy: 0,
+            precision: 0,
+            recall: 0,
+            f1: 0
+        };
+    }
+}
+
+function setModelPerformance(metrics) {
+    const totals = normalizePerformanceCounts(metrics);
+    const derived = calculatePerformanceRates(totals);
+    const normalized = {
+        ...totals,
+        total: parseMetricNumber(metrics.total ?? metrics.Total, totals.tp + totals.tn + totals.fp + totals.fn),
+        accuracy: normalizeRate(metrics.accuracy ?? metrics.Accuracy, derived.accuracy),
+        precision: normalizeRate(metrics.precision ?? metrics.Precision, derived.precision),
+        recall: normalizeRate(metrics.recall ?? metrics.Recall, derived.recall),
+        f1: normalizeRate(metrics.f1 ?? metrics.f1Score ?? metrics.F1 ?? metrics['F1 Score'], derived.f1)
     };
+    localStorage.setItem(MODEL_PERFORMANCE_KEY, JSON.stringify(normalized));
+}
 
-    records.forEach(email => {
-        const actualLabel = getActualLabel(email);
-        if (!actualLabel) return;
+function parseMetricNumber(value, fallback = 0) {
+    if (value === undefined || value === null || value === '') return fallback;
+    const parsed = Number(String(value).replace('%', '').trim());
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
 
-        const actualPhishing = actualLabel === 'PHISHING';
-        const predictedPhishing = isPredictedPhishing(email);
+function normalizeRate(value, fallback = 0) {
+    const parsed = parseMetricNumber(value, fallback);
+    return parsed > 1 ? parsed / 100 : parsed;
+}
 
-        totals.evaluated += 1;
+function normalizePerformanceCounts(metrics = {}) {
+    return {
+        tp: parseMetricNumber(metrics.tp ?? metrics.TP ?? metrics.truePositive ?? metrics.truePositives ?? metrics['True Positives']),
+        tn: parseMetricNumber(metrics.tn ?? metrics.TN ?? metrics.trueNegative ?? metrics.trueNegatives ?? metrics['True Negatives']),
+        fp: parseMetricNumber(metrics.fp ?? metrics.FP ?? metrics.falsePositive ?? metrics.falsePositives ?? metrics['False Positives']),
+        fn: parseMetricNumber(metrics.fn ?? metrics.FN ?? metrics.falseNegative ?? metrics.falseNegatives ?? metrics['False Negatives'])
+    };
+}
 
-        if (predictedPhishing && actualPhishing) totals.tp += 1;
-        else if (!predictedPhishing && !actualPhishing) totals.tn += 1;
-        else if (predictedPhishing && !actualPhishing) totals.fp += 1;
-        else if (!predictedPhishing && actualPhishing) totals.fn += 1;
-    });
-
-    const accuracy = safeDivide(totals.tp + totals.tn, totals.evaluated);
+function calculatePerformanceRates(totals) {
+    const evaluated = totals.tp + totals.tn + totals.fp + totals.fn;
+    const accuracy = safeDivide(totals.tp + totals.tn, evaluated);
     const precision = safeDivide(totals.tp, totals.tp + totals.fp);
     const recall = safeDivide(totals.tp, totals.tp + totals.fn);
     const f1 = safeDivide(2 * precision * recall, precision + recall);
 
-    return {
-        ...totals,
-        accuracy,
-        precision,
-        recall,
-        f1
-    };
+    return { accuracy, precision, recall, f1 };
+}
+
+function findSystemPerformancePayload(response) {
+    const candidates = [
+        response?.systemPerformance,
+        response?.performance,
+        response?.metrics,
+        response?.modelPerformance,
+        response?.evaluation,
+        response?.summary
+    ];
+
+    if (response && typeof response === 'object') {
+        candidates.push(response);
+    }
+
+    return candidates.find(candidate => {
+        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false;
+        const totals = normalizePerformanceCounts(candidate);
+        return totals.tp + totals.tn + totals.fp + totals.fn > 0;
+    }) || null;
+}
+
+function syncSystemPerformance(response) {
+    const systemMetrics = findSystemPerformancePayload(response);
+    const metrics = systemMetrics || getModelPerformance();
+    setModelPerformance(metrics);
+    return metrics;
+}
+
+function calculateModelPerformance() {
+    return getModelPerformance();
 }
 
 function safeDivide(numerator, denominator) {
@@ -964,10 +1347,437 @@ function setText(id, value) {
     if (element) element.innerText = value;
 }
 
+function getEmailSessionTiming() {
+    try {
+        return JSON.parse(localStorage.getItem('emailSessionTiming')) || {};
+    } catch (err) {
+        return {};
+    }
+}
+
+function calculateGroundTruthClassificationMetrics(records) {
+    console.log('[CALC] calculateGroundTruthClassificationMetrics called with', records.length, 'records');
+    const matrix = {
+        truePositive: 0,
+        trueNegative: 0,
+        falsePositive: 0,
+        falseNegative: 0
+    };
+
+    let evalCount = 0;
+    records.forEach((record, idx) => {
+        const actualLabel = getActualLabel(record);
+        console.log(`[CALC] Record ${idx}: actualLabel="${actualLabel}", Actual_Label field="${record?.Actual_Label}"`);
+        
+        if (!actualLabel) {
+            console.log(`[CALC] Record ${idx} skipped: no actualLabel`);
+            return;
+        }
+        evalCount++;
+
+        const predictedLabel = getPredictedLabelAsActual(record);
+        console.log(`[CALC] Record ${idx}: predicted="${predictedLabel}", actual="${actualLabel}"`);
+
+        if (actualLabel === 'PHISHING' && predictedLabel === 'PHISHING') {
+            matrix.truePositive += 1;
+            console.log(`[CALC] Record ${idx}: TP`);
+        }
+        if (actualLabel === 'SAFE' && predictedLabel === 'SAFE') {
+            matrix.trueNegative += 1;
+            console.log(`[CALC] Record ${idx}: TN`);
+        }
+        if (actualLabel === 'SAFE' && predictedLabel === 'PHISHING') {
+            matrix.falsePositive += 1;
+            console.log(`[CALC] Record ${idx}: FP`);
+        }
+        if (actualLabel === 'PHISHING' && predictedLabel === 'SAFE') {
+            matrix.falseNegative += 1;
+            console.log(`[CALC] Record ${idx}: FN`);
+        }
+    });
+
+    console.log('[CALC] Evaluated', evalCount, 'records. Matrix:', matrix);
+    const total = matrix.truePositive + matrix.trueNegative + matrix.falsePositive + matrix.falseNegative;
+    const precision = safeDivide(matrix.truePositive, matrix.truePositive + matrix.falsePositive);
+    const recall = safeDivide(matrix.truePositive, matrix.truePositive + matrix.falseNegative);
+    const f1Score = safeDivide(2 * precision * recall, precision + recall);
+
+    return {
+        total,
+        confusionMatrix: matrix,
+        accuracy: safeDivide(matrix.truePositive + matrix.trueNegative, total),
+        precision,
+        recall,
+        f1Score
+    };
+}
+
+function buildEmailSessionEvaluation() {
+    // Always calculate metrics from latest edited labels:
+    // 1) Start from the cached emailAnalysisResults records
+    // 2) Ensure Actual_Label is injected for each record using actualEmailLabels (and record field if present)
+    // 3) Compute TP/TN/FP/FN from that injected set
+
+    let cached = [];
+    try {
+        cached = getAllEmailAnalysisResults();
+    } catch (err) {
+        cached = [];
+    }
+
+    if (Array.isArray(cached) && cached.length) {
+        // Keep reportResults in sync so the rest of the page (charts/table) uses the same dataset.
+        reportResults = cached.slice(0, 50);
+    }
+
+    // getEmailAnalysisResults() already maps Actual_Label using getActualLabelsFromAllSources()
+    // but we additionally re-inject here to be extra defensive against stale in-memory data.
+    const results = getEmailAnalysisResults();
+
+    // Re-render recent analysis + stats to match the rebuilt dataset.
+    // (Prevents UI metrics from lagging behind when labels were updated in email-results.)
+    try {
+        syncStatsFromEmailResults();
+    } catch (err) {}
+
+
+    console.log('[BUILD] getEmailAnalysisResults returned', results.length, 'records');
+    
+    const records = results
+        .slice(0, SESSION_METRICS_LIMIT)
+        .map(record => {
+            const actualLabel = getActualLabel(record);
+            console.log('[BUILD] Re-applied actualLabel:', actualLabel, 'for email key:', getEmailKeys(record)[0]);
+            return actualLabel ? { ...record, Actual_Label: actualLabel } : record;
+        });
+    console.log('[BUILD] After mapping, records:', records.length);
+    console.log('[BUILD] Sample record Actual_Label:', records[0]?.Actual_Label);
+    
+    const total = records.length;
+    const safeCount = records.filter(record => normalizeCategory(record) === 'SAFE').length;
+    const phishingCount = records.filter(record => normalizeCategory(record) === 'PHISHING').length;
+    const potentialCount = records.filter(record => normalizeCategory(record) === 'POTENTIAL_PHISHING').length;
+    const classifiedCount = safeCount + phishingCount + potentialCount;
+    const threatCount = phishingCount + potentialCount;
+    const ppa = safeDivide(classifiedCount, total);
+    const lepr = safeDivide(safeCount, total);
+    const ppp = safeDivide(phishingCount, threatCount);
+    const pdrr = safeDivide(phishingCount, total);
+    const tlf1 = safeDivide(2 * ppp * pdrr, ppp + pdrr);
+    const classification = calculateGroundTruthClassificationMetrics(records);
+    const transactionMetrics = normalizeTransactionMetrics(latestTransactionMetrics);
+    const emailTiming = getEmailSessionTiming();
+    console.log('[TIMING] emailTiming retrieved:', emailTiming);
+    console.log('[TIMING] transactionMetrics:', transactionMetrics);
+    const wta = transactionMetrics.wta;
+    const tpc = transactionMetrics.tpc;
+    const swdr = transactionMetrics.swdr;
+    const prt = parseMetricNumber(
+        emailTiming.averagePredictionTimeSeconds ?? emailTiming.averageResponseTimeSeconds,
+        transactionMetrics.prt
+    );
+    console.log('[TIMING] PRT (Prediction Response Time) = ', prt, 'from emailTiming.averagePredictionTimeSeconds=', emailTiming.averagePredictionTimeSeconds);
+    const brt = transactionMetrics.brt;
+    console.log('[TIMING] BRT (Blockchain Retrieval Time) = ', brt);
+    const throughput = parseMetricNumber(
+        emailTiming.throughputEmailsPerSecond,
+        transactionMetrics.throughput
+    );
+    console.log('[TIMING] Throughput = ', throughput, 'from emailTiming.throughputEmailsPerSecond=', emailTiming.throughputEmailsPerSecond);
+
+    return {
+        source: 'CURRENT_SYSTEM_PERFORMANCE',
+        evaluatedAt: new Date().toISOString(),
+        totalSamples: total,
+        confusionMatrix: classification.confusionMatrix,
+        classification,
+        metrics: {
+            accuracy: ppa,
+            precision: lepr,
+            recall: ppp,
+            f1Score: pdrr,
+            tlf1,
+            wta,
+            tpc,
+            swdr,
+            prt,
+            brt,
+            throughput
+        }
+    };
+}
+
+function normalizeTransactionMetrics(payload) {
+    const source = payload?.metrics || payload?.transactionMetrics || payload?.blockchainMetrics || payload || {};
+    const correctlyTraced = parseMetricNumber(source.correctlyTracedTransactions ?? source.correctlyTraced ?? source.tracedCorrectly);
+    const totalTransactions = parseMetricNumber(source.totalTransactions ?? source.transactionsTotal);
+    const identifiedPaths = parseMetricNumber(source.identifiedTransactionPaths ?? source.identifiedPaths);
+    const actualPaths = parseMetricNumber(source.actualTransactionPaths ?? source.totalPaths);
+    const detectedWallets = parseMetricNumber(source.detectedSuspiciousWallets ?? source.detectedWallets);
+    const totalWallets = parseMetricNumber(source.totalSuspiciousWallets ?? source.suspiciousWalletsTotal);
+    const totalPredictionTime = parseMetricNumber(source.totalPredictionTimeSeconds ?? source.totalPredictionTime);
+    const numberOfEmails = parseMetricNumber(source.numberOfEmails ?? source.totalEmails);
+    const totalRetrievalTime = parseMetricNumber(source.totalRetrievalTimeSeconds ?? source.totalRetrievalTime);
+    const numberOfRequests = parseMetricNumber(source.numberOfRequests ?? source.totalRequests);
+    const processingTime = parseMetricNumber(source.processingTimeSeconds ?? source.processingTime);
+
+    return {
+        wta: normalizeRate(source.wta ?? source.WTA, safeDivide(correctlyTraced, totalTransactions)),
+        tpc: normalizeRate(source.tpc ?? source.TPC, safeDivide(identifiedPaths, actualPaths)),
+        swdr: normalizeRate(source.swdr ?? source.SWDR, safeDivide(detectedWallets, totalWallets)),
+        prt: parseMetricNumber(source.prt ?? source.PRT, safeDivide(totalPredictionTime, numberOfEmails)),
+        brt: parseMetricNumber(source.brt ?? source.BRT, safeDivide(totalRetrievalTime, numberOfRequests)),
+        throughput: parseMetricNumber(source.throughput ?? source.ST, safeDivide(numberOfEmails, processingTime))
+    };
+}
+
+async function loadTransactionAnalyticsMetrics() {
+    if (!TRANSACTION_ANALYTICS_API_URL || TRANSACTION_ANALYTICS_API_URL.includes('your-transaction')) {
+        latestTransactionMetrics = null;
+        return;
+    }
+
+    try {
+        const response = await fetch(TRANSACTION_ANALYTICS_API_URL);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        latestTransactionMetrics = await response.json();
+        renderKaggleEvaluation(buildEmailSessionEvaluation());
+    } catch (err) {
+        console.warn('Unable to load transaction analytics metrics', err);
+        latestTransactionMetrics = null;
+    }
+}
+
+function getEmptyKaggleEvaluation() {
+    return {
+        source: 'PROJECT_PERFORMANCE_EVALUATION',
+        evaluatedAt: null,
+        totalSamples: 0,
+        confusionMatrix: {
+            truePositive: 0,
+            trueNegative: 0,
+            falsePositive: 0,
+            falseNegative: 0
+        },
+        classification: {
+            total: 0,
+            confusionMatrix: {
+                truePositive: 0,
+                trueNegative: 0,
+                falsePositive: 0,
+                falseNegative: 0
+            },
+            accuracy: 0,
+            precision: 0,
+            recall: 0,
+            f1Score: 0
+        },
+        metrics: {
+            accuracy: 0,
+            precision: 0,
+            recall: 0,
+            f1Score: 0,
+            tlf1: 0,
+            wta: 0,
+            tpc: 0,
+            swdr: 0,
+            prt: 0,
+            brt: 0,
+            throughput: 0
+        }
+    };
+}
+
+function normalizeKaggleEvaluationPayload(payload) {
+    const empty = getEmptyKaggleEvaluation();
+    const matrix = payload?.confusionMatrix || {};
+    const metrics = payload?.metrics || payload || {};
+    const classification = payload?.classification || {};
+    const classificationMatrix = classification.confusionMatrix || matrix;
+
+    return {
+        source: payload?.source || empty.source,
+        evaluatedAt: payload?.evaluatedAt || null,
+        totalSamples: Number(payload?.totalSamples || payload?.total || 0),
+        confusionMatrix: {
+            truePositive: parseMetricNumber(matrix.truePositive ?? matrix.tp ?? payload?.tp),
+            trueNegative: parseMetricNumber(matrix.trueNegative ?? matrix.tn ?? payload?.tn),
+            falsePositive: parseMetricNumber(matrix.falsePositive ?? matrix.fp ?? payload?.fp),
+            falseNegative: parseMetricNumber(matrix.falseNegative ?? matrix.fn ?? payload?.fn)
+        },
+        classification: {
+            total: parseMetricNumber(classification.total),
+            confusionMatrix: {
+                truePositive: parseMetricNumber(classificationMatrix.truePositive ?? classificationMatrix.tp),
+                trueNegative: parseMetricNumber(classificationMatrix.trueNegative ?? classificationMatrix.tn),
+                falsePositive: parseMetricNumber(classificationMatrix.falsePositive ?? classificationMatrix.fp),
+                falseNegative: parseMetricNumber(classificationMatrix.falseNegative ?? classificationMatrix.fn)
+            },
+            accuracy: normalizeRate(classification.accuracy),
+            precision: normalizeRate(classification.precision),
+            recall: normalizeRate(classification.recall),
+            f1Score: normalizeRate(classification.f1Score ?? classification.f1)
+        },
+        metrics: {
+            accuracy: normalizeRate(metrics.accuracy ?? metrics.Accuracy),
+            precision: normalizeRate(metrics.precision ?? metrics.Precision),
+            recall: normalizeRate(metrics.recall ?? metrics.Recall),
+            f1Score: normalizeRate(metrics.f1Score ?? metrics.f1 ?? metrics.F1 ?? metrics['F1 Score']),
+            tlf1: normalizeRate(metrics.tlf1 ?? metrics.TLF1),
+            wta: normalizeRate(metrics.wta ?? metrics.WTA),
+            tpc: normalizeRate(metrics.tpc ?? metrics.TPC),
+            swdr: normalizeRate(metrics.swdr ?? metrics.SWDR),
+            prt: parseMetricNumber(metrics.prt),
+            brt: parseMetricNumber(metrics.brt),
+            throughput: parseMetricNumber(metrics.throughput)
+        }
+    };
+}
+
+function setKaggleEvaluationStatus(message) {
+    setText('kaggleEvaluationStatus', message);
+}
+
+function renderKaggleEvaluation(payload) {
+    const result = normalizeKaggleEvaluationPayload(payload || getEmptyKaggleEvaluation());
+    const matrix = result.confusionMatrix;
+    const metrics = result.metrics;
+    const classification = result.classification;
+    const classificationMatrix = classification.confusionMatrix;
+    const total = result.totalSamples || matrix.truePositive + matrix.trueNegative + matrix.falsePositive + matrix.falseNegative;
+
+    setText('kaggleTotalSamples', total);
+    setText('kaggleTpCount', formatPercent(metrics.accuracy));
+    setText('kaggleTnCount', formatPercent(metrics.precision));
+    setText('kaggleFpCount', formatPercent(metrics.recall));
+    setText('kaggleFnCount', formatPercent(metrics.f1Score));
+    setText('kaggleAccuracyScore', formatPercent(metrics.tlf1));
+    setText('kagglePrecisionScore', formatPercent(metrics.wta));
+    setText('kaggleRecallScore', formatPercent(metrics.tpc));
+    setText('kaggleF1Score', formatPercent(metrics.swdr));
+    // These 3 session metrics should never show 0s/0 emails/s just because timing payload is missing.
+    // If we have no emailSessionTiming stored yet (or it contains no emails), keep values at 0 but format safely.
+    const prtSeconds = Number.isFinite(metrics.prt) ? metrics.prt : 0;
+    const brtSeconds = Number.isFinite(metrics.brt) ? metrics.brt : 0;
+    const throughputEmailsPerSec = Number.isFinite(metrics.throughput) ? metrics.throughput : 0;
+
+    setText('sessionSafeRate', `${prtSeconds.toFixed(2)}s`);
+    setText('sessionPhishingRate', `${brtSeconds.toFixed(2)}s`);
+    setText('sessionPotentialRate', `${throughputEmailsPerSec.toFixed(3)} emails/s`);
+    setText('classificationEvaluatedCount', classification.total);
+    setText('classificationTp', classificationMatrix.truePositive);
+    setText('classificationTn', classificationMatrix.trueNegative);
+    setText('classificationFp', classificationMatrix.falsePositive);
+    setText('classificationFn', classificationMatrix.falseNegative);
+    setText('classificationAccuracy', formatPercent(classification.accuracy));
+    setText('classificationPrecision', formatPercent(classification.precision));
+    setText('classificationRecall', formatPercent(classification.recall));
+    setText('classificationF1', formatPercent(classification.f1Score));
+    setText('kaggleCardTp', classificationMatrix.truePositive);
+    setText('kaggleCardTn', classificationMatrix.trueNegative);
+    setText('kaggleCardFp', classificationMatrix.falsePositive);
+    setText('kaggleCardFn', classificationMatrix.falseNegative);
+    setText('kaggleCardAccuracy', formatPercent(classification.accuracy));
+    setText('kaggleCardPrecision', formatPercent(classification.precision));
+    setText('kaggleCardRecall', formatPercent(classification.recall));
+    setText('kaggleCardF1', formatPercent(classification.f1Score));
+
+    const evaluatedText = result.evaluatedAt
+        ? `Last calculated: ${new Date(result.evaluatedAt).toLocaleString()} | latest ${total} of ${SESSION_METRICS_LIMIT} email(s) | ${classification.total} labelled`
+        : 'No project performance metrics are available yet.';
+    setKaggleEvaluationStatus(evaluatedText);
+
+    updateKaggleCharts(metrics, matrix);
+}
+
+function updateKaggleCharts(metrics, matrix) {
+    const metricCanvas = document.getElementById('kaggleMetricChart');
+    const confusionCanvas = document.getElementById('kaggleConfusionChart');
+    if (!metricCanvas || !confusionCanvas) return;
+
+    const metricData = [
+        Number((metrics.accuracy * 100).toFixed(1)),
+        Number((metrics.precision * 100).toFixed(1)),
+        Number((metrics.recall * 100).toFixed(1)),
+        Number((metrics.f1Score * 100).toFixed(1)),
+        Number((metrics.tlf1 * 100).toFixed(1))
+    ];
+
+    if (!kaggleMetricChart) {
+        kaggleMetricChart = new Chart(metricCanvas, {
+            type: 'line',
+            data: {
+                labels: ['PPA', 'LEPR', 'PPP', 'PDRR', 'TLF1'],
+                datasets: [{
+                    label: 'Prediction Metric (%)',
+                    data: metricData,
+                    borderColor: '#2b6cff',
+                    backgroundColor: 'rgba(43, 108, 255, 0.14)',
+                    fill: true,
+                    tension: 0.35,
+                    pointRadius: 5,
+                    pointBackgroundColor: '#2b6cff'
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: {
+                            callback: value => `${value}%`
+                        }
+                    }
+                }
+            }
+        });
+    } else {
+        kaggleMetricChart.data.datasets[0].data = metricData;
+        kaggleMetricChart.data.labels = ['PPA', 'LEPR', 'PPP', 'PDRR', 'TLF1'];
+        kaggleMetricChart.update('none');
+    }
+
+    const confusionData = [
+        Number((metrics.wta * 100).toFixed(1)),
+        Number((metrics.tpc * 100).toFixed(1)),
+        Number((metrics.swdr * 100).toFixed(1))
+    ];
+
+    if (!kaggleConfusionChart) {
+        kaggleConfusionChart = new Chart(confusionCanvas, {
+            type: 'bar',
+            data: {
+                labels: ['WTA', 'TPC', 'SWDR'],
+                datasets: [{
+                    label: 'Blockchain Metric (%)',
+                    data: confusionData,
+                    backgroundColor: ['#52c41a', '#2b6cff', '#faad14']
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: {
+                            callback: value => `${value}%`
+                        }
+                    }
+                }
+            }
+        });
+    } else {
+        kaggleConfusionChart.data.datasets[0].data = confusionData;
+        kaggleConfusionChart.data.labels = ['WTA', 'TPC', 'SWDR'];
+        kaggleConfusionChart.update('none');
+    }
+}
+
 function updateModelPerformance() {
     const metrics = calculateModelPerformance();
+    const evaluated = metrics.total || (metrics.tp + metrics.tn + metrics.fp + metrics.fn);
 
-    setText('evaluatedCount', metrics.evaluated);
+    setText('evaluatedCount', evaluated);
     setText('tpCount', metrics.tp);
     setText('tnCount', metrics.tn);
     setText('fpCount', metrics.fp);
@@ -1063,35 +1873,6 @@ function initCharts() {
         }
     });
 
-    const performanceData = getPerformanceChartData();
-
-    performanceChart = new Chart(document.getElementById("performanceChart"), {
-        type: 'line',
-        data: {
-            labels: performanceData.labels,
-            datasets: [{
-                label: 'Performance Score (%)',
-                data: performanceData.data,
-                borderColor: '#2b6cff',
-                backgroundColor: 'rgba(43, 108, 255, 0.14)',
-                fill: true,
-                tension: 0.35,
-                pointRadius: 5,
-                pointBackgroundColor: '#2b6cff'
-            }]
-        },
-        options: {
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    max: 100,
-                    ticks: {
-                        callback: value => `${value}%`
-                    }
-                }
-            }
-        }
-    });
 }
 
 /* ===== REAL-TIME CHART UPDATES ===== */
@@ -1147,7 +1928,7 @@ function downloadPDF() {
     const pdf = document.getElementById("pdfReport");
     pdf.style.display = "block";
 
-    // Update PDF summary values, charts, and table before export
+    // Update PDF summary values, charts, classification metrics, and table before export
     const currentStats = getStats();
     updatePdfSummary(currentStats);
     updatePdfPerformance();
@@ -1169,7 +1950,8 @@ function downloadPDF() {
 
 let pdfPieChart = null;
 let pdfBarChart = null;
-let pdfPerformanceChart = null;
+let pdfMetricChart = null;
+let pdfTraceChart = null;
 
 function updatePdfSummary(stats) {
     const summary = getThreatSummary();
@@ -1178,21 +1960,24 @@ function updatePdfSummary(stats) {
 }
 
 function updatePdfPerformance() {
-    const metrics = calculateModelPerformance();
+    const evaluation = buildEmailSessionEvaluation();
+    const classification = evaluation.classification;
+    const matrix = classification.confusionMatrix;
+    const total = classification.total;
 
-    setText('pdfEvaluated', metrics.evaluated);
-    setText('pdfTp', metrics.tp);
-    setText('pdfTn', metrics.tn);
-    setText('pdfFp', metrics.fp);
-    setText('pdfFn', metrics.fn);
-    setText('pdfAccuracy', formatPercent(metrics.accuracy));
-    setText('pdfPrecision', formatPercent(metrics.precision));
-    setText('pdfRecall', formatPercent(metrics.recall));
-    setText('pdfF1', formatPercent(metrics.f1));
-    setText('pdfMatrixTp', metrics.tp);
-    setText('pdfMatrixFp', metrics.fp);
-    setText('pdfMatrixFn', metrics.fn);
-    setText('pdfMatrixTn', metrics.tn);
+    setText('pdfEvaluated', total);
+    setText('pdfTp', matrix.truePositive);
+    setText('pdfTn', matrix.trueNegative);
+    setText('pdfFp', matrix.falsePositive);
+    setText('pdfFn', matrix.falseNegative);
+    setText('pdfAccuracy', formatPercent(classification.accuracy));
+    setText('pdfPrecision', formatPercent(classification.precision));
+    setText('pdfRecall', formatPercent(classification.recall));
+    setText('pdfF1', formatPercent(classification.f1Score));
+
+    setText('pdfPrt', `${evaluation.metrics.prt.toFixed(2)}s`);
+    setText('pdfBrt', `${evaluation.metrics.brt.toFixed(2)}s`);
+    setText('pdfThroughput', `${evaluation.metrics.throughput.toFixed(3)} emails/s`);
 }
 
 function buildPdfCharts(stats) {
@@ -1251,21 +2036,60 @@ function buildPdfCharts(stats) {
         }
     });
 
-    const performanceData = getPerformanceChartData();
+    const evaluation = buildEmailSessionEvaluation();
+    const metrics = evaluation.metrics;
+    const metricLabels = ['PPA', 'LEPR', 'PPP', 'PDRR', 'TLF1'];
+    const metricData = [
+        Number((metrics.accuracy * 100).toFixed(1)),
+        Number((metrics.precision * 100).toFixed(1)),
+        Number((metrics.recall * 100).toFixed(1)),
+        Number((metrics.f1Score * 100).toFixed(1)),
+        Number((metrics.tlf1 * 100).toFixed(1))
+    ];
 
-    pdfPerformanceChart = new Chart(document.getElementById('pdfPerformanceChart'), {
+    pdfMetricChart = new Chart(document.getElementById('pdfMetricChart'), {
         type: 'line',
         data: {
-            labels: performanceData.labels,
+            labels: metricLabels,
             datasets: [{
-                label: 'Performance Score (%)',
-                data: performanceData.data,
+                label: 'Prediction Metrics (%)',
+                data: metricData,
                 borderColor: '#2b6cff',
                 backgroundColor: 'rgba(43, 108, 255, 0.14)',
                 fill: true,
                 tension: 0.35,
-                pointRadius: 5,
+                pointRadius: 4,
                 pointBackgroundColor: '#2b6cff'
+            }]
+        },
+        options: {
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: {
+                        callback: value => `${value}%`
+                    }
+                }
+            }
+        }
+    });
+
+    const traceLabels = ['WTA', 'TPC', 'SWDR'];
+    const traceData = [
+        Number((metrics.wta * 100).toFixed(1)),
+        Number((metrics.tpc * 100).toFixed(1)),
+        Number((metrics.swdr * 100).toFixed(1))
+    ];
+
+    pdfTraceChart = new Chart(document.getElementById('pdfTraceChart'), {
+        type: 'bar',
+        data: {
+            labels: traceLabels,
+            datasets: [{
+                label: 'Tracing Metrics (%)',
+                data: traceData,
+                backgroundColor: ['#52c41a', '#2b6cff', '#faad14']
             }]
         },
         options: {
@@ -1291,9 +2115,13 @@ function destroyPdfCharts() {
         pdfBarChart.destroy();
         pdfBarChart = null;
     }
-    if (pdfPerformanceChart) {
-        pdfPerformanceChart.destroy();
-        pdfPerformanceChart = null;
+    if (pdfMetricChart) {
+        pdfMetricChart.destroy();
+        pdfMetricChart = null;
+    }
+    if (pdfTraceChart) {
+        pdfTraceChart.destroy();
+        pdfTraceChart = null;
     }
 }
 
@@ -1351,8 +2179,62 @@ function updateUI() {
 }
 
 function getRecentAnalysis() {
-    const records = JSON.parse(localStorage.getItem('recentAnalysis')) || [];
-    return records;
+    try {
+        const records = JSON.parse(localStorage.getItem('recentAnalysis')) || [];
+        if (Array.isArray(records) && records.length > 0) {
+            const cleanedRecords = cleanRecentAnalysisRecords(records);
+            if (cleanedRecords.length > 0) {
+                if (cleanedRecords.length !== records.length) {
+                    saveRecentAnalysis(cleanedRecords);
+                }
+                return cleanedRecords;
+            }
+        }
+    } catch (err) {
+        console.warn('Unable to parse recentAnalysis from localStorage', err);
+    }
+
+    const fallbackRecords = buildRecentAnalysisFromEmailResults();
+    if (fallbackRecords.length > 0) {
+        saveRecentAnalysis(fallbackRecords);
+    }
+    return fallbackRecords;
+}
+
+function cleanRecentAnalysisRecords(records) {
+    const seen = new Set();
+
+    return records
+        .filter(record => {
+            const sender = String(record?.sender || '').trim();
+            const subject = String(record?.subject || '').trim();
+            const status = String(record?.status || '').trim();
+
+            if (sender === 'live@securetrace' && subject === 'Gmail scan completed') {
+                return false;
+            }
+
+            const key = `${record?.date || ''}|${sender}|${subject}|${status}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        })
+        .slice(0, 10);
+}
+
+function buildRecentAnalysisFromEmailResults() {
+    const records = getAllEmailAnalysisResults();
+
+    return cleanRecentAnalysisRecords(records
+        .filter(record => record && typeof record === 'object')
+        .sort((a, b) => getRecordTime(b) - getRecordTime(a))
+        .slice(0, 10)
+        .map(email => ({
+            date: getEmailField(email, ['Date', 'date', 'Email Date', 'Created At']) || '-',
+            sender: getEmailField(email, ['From', 'Sender', 'Email From', 'from']) || '-',
+            subject: getEmailField(email, ['Subject', 'Email Subject', 'subject']) || '-',
+            status: getStatusLabel(email)
+        })));
 }
 
 function escapeHtml(text) {
@@ -1436,19 +2318,34 @@ function refreshAnalysis() {
     renderAnalysisTable();
     updateCharts();
     updateModelPerformance();
+    renderKaggleEvaluation(buildEmailSessionEvaluation());
+    updateScanSummary();
 }
 
 /* ===== INIT ===== */
 window.onload = function () {
+    console.log('========== REPORTS PAGE LOADED ==========');
+    console.log('[INIT] localStorage.actualEmailLabels:', localStorage.getItem('actualEmailLabels'));
+    console.log('[INIT] localStorage.emailAnalysisResults count:', JSON.parse(localStorage.getItem('emailAnalysisResults') || '[]').length);
+    const firstRecord = JSON.parse(localStorage.getItem('emailAnalysisResults') || '[]')[0];
+    console.log('[INIT] First record sample:', firstRecord);
+    console.log('[INIT] First record Actual_Label field:', firstRecord?.Actual_Label);
+    
     resetProjectCountsOnce();
+    mergeActualLabelsFromUrl();
     initStats();
+    initModelPerformance();
+    initActivityTracking();
     updateUI();
     initCharts();
+    renderKaggleEvaluation(buildEmailSessionEvaluation());
+    loadTransactionAnalyticsMetrics();
     initAnalysis();
     logActivity("Visited reports page");
     // Update charts and current analysis every 3 seconds for live sync
     setInterval(updateCharts, 3000);
     setInterval(refreshAnalysis, 3000);
+    setInterval(loadTransactionAnalyticsMetrics, 15000);
     setInterval(loadReportResults, 10000);
     window.addEventListener('storage', refreshAnalysis);
     window.addEventListener('focus', loadReportResults);
@@ -1469,6 +2366,21 @@ function logActivity(message) {
     if (logs.length > 100) logs.pop();
 
     localStorage.setItem("activityLogs", JSON.stringify(logs));
+}
+
+function initActivityTracking() {
+    document.body.addEventListener('click', function (event) {
+        const anchor = event.target.closest('a');
+        if (anchor && anchor.href) {
+            logActivity(`Clicked navigation link: ${anchor.textContent.trim() || anchor.href}`);
+            return;
+        }
+
+        const button = event.target.closest('button,input[type="button"],input[type="submit"]');
+        if (button) {
+            logActivity(`Clicked button: ${button.textContent.trim()}`);
+        }
+    }, true);
 }
 </script>
 

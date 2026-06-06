@@ -379,13 +379,28 @@ function logActivity(message) {
     localStorage.setItem("activityLogs", JSON.stringify(logs));
 }
 
+function initActivityTracking() {
+    document.body.addEventListener('click', function (event) {
+        const anchor = event.target.closest('a');
+        if (anchor && anchor.href) {
+            logActivity(`Clicked navigation link: ${anchor.textContent.trim() || anchor.href}`);
+            return;
+        }
+
+        const button = event.target.closest('button,input[type="button"],input[type="submit"]');
+        if (button) {
+            logActivity(`Clicked button: ${button.textContent.trim()}`);
+        }
+    }, true);
+}
+
 /* ================= STATS MANAGEMENT ================= */
 function initStats() {
     if (!localStorage.getItem("stats")) {
         setStats({
-            emails: 25,
+            emails: 0,
             transactions: 0,
-            alerts: 6,
+            alerts: 0,
             reports: 0,
             phishing: 0,
             potential: 0
@@ -469,7 +484,6 @@ function generateAlert(threatType) {
 /* ================= CONNECT GMAIL ================= */
 function connectGmail() {
     initStats();
-    recordAnalysis('live@securetrace', 'Gmail scan completed', '✅ Safe', 0);
 
     const btn = document.querySelector("button");
     btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Connecting securely via Google...';
@@ -486,6 +500,7 @@ function connectGmail() {
 
 /* ================= PAGE LOAD ================= */
 window.onload = function () {
+    initActivityTracking();
     logActivity("Visited Email Filtering page");
 };
 </script>

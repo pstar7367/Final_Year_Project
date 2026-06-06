@@ -281,7 +281,8 @@ function resetProjectCountsOnce() {
 
     if (localStorage.getItem(resetKey) === resetVersion) return;
 
-    localStorage.removeItem("emailAnalysisResults");
+    // Preserve emailAnalysisResults and actual labels so dashboard/reports navigation keeps counts.
+    // localStorage.removeItem("emailAnalysisResults");
     localStorage.removeItem("recentAnalysis");
     localStorage.setItem("stats", JSON.stringify({
         emails: 0,
@@ -459,6 +460,7 @@ function updateUI() {
 
 /* ===== ACTIONS ===== */
 function goToEmail() {
+    logActivity("Navigated to Email Filtering page");
     window.location.href = "email.html";
 }
 
@@ -470,26 +472,11 @@ function openTransaction() {
     setStats(stats);
 
     alert("Transaction module will be connected soon.");
-    const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
-
-    logs.unshift({
-        message: "Opened Transaction Analysis",
-        time: new Date().toLocaleString()
-    });
-
-    localStorage.setItem("activityLogs", JSON.stringify(logs));
+    logActivity("Opened Transaction Analysis");
 
     // 🔗 your external link
     window.location.href = "https://your-transaction-tool-link.com";
 }
-
-/* ===== INIT ===== */
-window.onload = function () {
-    resetProjectCountsOnce();
-    initStats();
-    updateUI();
-    loadDashboardResults();
-};
 
 // 🧠 GLOBAL ACTIVITY LOGGER
 function logActivity(message) {
@@ -500,13 +487,28 @@ function logActivity(message) {
         time: new Date().toLocaleString()
     });
 
-    // Keep only last 100 logs
     if (logs.length > 100) logs.pop();
 
     localStorage.setItem("activityLogs", JSON.stringify(logs));
 }
 
+function initActivityTracking() {
+    document.body.addEventListener('click', function (event) {
+        const anchor = event.target.closest('a');
+        if (anchor && anchor.href) {
+            logActivity(`Clicked navigation link: ${anchor.textContent.trim() || anchor.href}`);
+            return;
+        }
+
+        const button = event.target.closest('button,input[type="button"],input[type="submit"]');
+        if (button) {
+            logActivity(`Clicked button: ${button.textContent.trim()}`);
+        }
+    }, true);
+}
+
 window.onload = function () {
+    initActivityTracking();
     resetProjectCountsOnce();
     initStats();
     updateUI();

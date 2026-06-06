@@ -180,6 +180,34 @@ body {
 <script>
 lucide.createIcons();
 
+function logActivity(message) {
+    const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
+
+    logs.unshift({
+        message: message,
+        time: new Date().toLocaleString()
+    });
+
+    if (logs.length > 100) logs.pop();
+
+    localStorage.setItem("activityLogs", JSON.stringify(logs));
+}
+
+function initActivityTracking() {
+    document.body.addEventListener('click', function (event) {
+        const anchor = event.target.closest('a');
+        if (anchor && anchor.href) {
+            logActivity(`Clicked navigation link: ${anchor.textContent.trim() || anchor.href}`);
+            return;
+        }
+
+        const button = event.target.closest('button,input[type="button"],input[type="submit"]');
+        if (button) {
+            logActivity(`Clicked button: ${button.textContent.trim()}`);
+        }
+    }, true);
+}
+
 // 📥 LOAD LOGS
 function loadLogs() {
     const container = document.getElementById("logContainer");
@@ -209,6 +237,7 @@ function loadLogs() {
 
 // 🗑️ CLEAR LOGS
 function clearLogs() {
+    logActivity("Cleared activity logs");
     localStorage.removeItem("activityLogs");
     loadLogs();
 }
@@ -216,8 +245,11 @@ function clearLogs() {
 // 🔄 AUTO REFRESH
 setInterval(loadLogs, 3000);
 
-// 🚀 INIT
-loadLogs();
+window.onload = function () {
+    initActivityTracking();
+    logActivity("Visited activity log page");
+    loadLogs();
+};
 </script>
 
 </body>
