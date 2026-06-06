@@ -719,6 +719,88 @@ th, td {
             </table>
         </div>
 
+        <div class="matrix-wrap">
+            <h3>System Performance Metrics Calculation Details</h3>
+            <table class="matrix-table">
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Formula Basis</th>
+                        <th>Calculation</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Phishing Prediction Activity (PPA)</td>
+                        <td>classifiedCount / total</td>
+                        <td id="calcPPA">-</td>
+                        <td id="resultPPA">0%</td>
+                    </tr>
+                    <tr>
+                        <td>Legitimate Email Preservation Rate (LEPR)</td>
+                        <td>safeCount / total</td>
+                        <td id="calcLEPR">-</td>
+                        <td id="resultLEPR">0%</td>
+                    </tr>
+                    <tr>
+                        <td>Phishing Prediction Proportion (PPP)</td>
+                        <td>phishingCount / threatCount</td>
+                        <td id="calcPPP">-</td>
+                        <td id="resultPPP">0%</td>
+                    </tr>
+                    <tr>
+                        <td>Phishing Detection Rate (PDRR)</td>
+                        <td>phishingCount / total</td>
+                        <td id="calcPDRR">-</td>
+                        <td id="resultPDRR">0%</td>
+                    </tr>
+                    <tr>
+                        <td>Transfer Learning Balance Score (TLF1)</td>
+                        <td>2 * (PPP * PDRR) / (PPP + PDRR)</td>
+                        <td id="calcTLF1">-</td>
+                        <td id="resultTLF1">0%</td>
+                    </tr>
+                    <tr>
+                        <td>Wallet Tracing Accuracy (WTA)</td>
+                        <td>From transaction analytics</td>
+                        <td id="calcWTA">-</td>
+                        <td id="resultWTA">0%</td>
+                    </tr>
+                    <tr>
+                        <td>Transaction Path Completeness (TPC)</td>
+                        <td>From transaction analytics</td>
+                        <td id="calcTPC">-</td>
+                        <td id="resultTPC">0%</td>
+                    </tr>
+                    <tr>
+                        <td>Suspicious Wallet Detection Rate (SWDR)</td>
+                        <td>From transaction analytics</td>
+                        <td id="calcSWDR">-</td>
+                        <td id="resultSWDR">0%</td>
+                    </tr>
+                    <tr>
+                        <td>Prediction Response Time (PRT)</td>
+                        <td>averagePredictionTimeSeconds or averageResponseTimeSeconds</td>
+                        <td id="calcPRT">-</td>
+                        <td id="resultPRT">0.00s</td>
+                    </tr>
+                    <tr>
+                        <td>Blockchain Retrieval Time (BRT)</td>
+                        <td>From transaction analytics</td>
+                        <td id="calcBRT">-</td>
+                        <td id="resultBRT">0.00s</td>
+                    </tr>
+                    <tr>
+                        <td>System Throughput</td>
+                        <td>throughputEmailsPerSecond or calculated</td>
+                        <td id="calcThroughput">-</td>
+                        <td id="resultThroughput">0 emails/s</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
         <div class="charts" style="margin-top:20px;">
             <div class="chart-box full-width">
                 <h3>Transfer Learning Prediction Metrics</h3>
@@ -767,6 +849,7 @@ let reportResults = [];
 let latestScannedCount = 0;
 let reportLoading = false;
 let reportTimeoutRef = null;
+let reportLoadStartTime = 0;
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzPxR7fokp5FQr5YDmJmbqOvRaF3h6gyL-CxIWysyvTBj_ncCewz44oXy3ARUMHXkrxhw/exec";
 const SESSION_METRICS_LIMIT = 50;
 const TRANSACTION_ANALYTICS_API_URL = "";
@@ -823,16 +906,16 @@ function getEmailAnalysisResults() {
 
     console.log('[RESULTS] Starting with', records.length, 'records (from emailAnalysisResults cache)');
 
-    // Always merge saved dropdown labels into the cached records.
-    const labels = getActualLabelsFromAllSources();
-    const mapped = records.map(record => {
-        // Prefer whatever is already on the record, otherwise use label cache lookup.
-        const actualLabel = normalizeActualLabel(record?.Actual_Label || getStoredActualLabel(record, labels));
-        return actualLabel ? { ...record, Actual_Label: actualLabel } : record;
-    });
+    const mapped = records.map(applyStoredActualLabel);
 
     console.log('[RESULTS] Returning', mapped.length, 'records with labels applied');
     return mapped;
+}
+
+function applyStoredActualLabel(email) {
+    const labels = getActualLabelsFromAllSources();
+    const actualLabel = normalizeActualLabel(email?.Actual_Label || getStoredActualLabel(email, labels));
+    return actualLabel ? { ...email, Actual_Label: actualLabel } : email;
 }
 
 function normalizeCategory(record) {
@@ -938,14 +1021,60 @@ function syncStatsFromEmailResults() {
     return stats;
 }
 
-function setSyncStatus(message) {
-    const status = document.getElementById('syncStatus');
-    if (status) status.innerText = message;
+function updateEmailSessionTiming(emailCount, responseData) {
+    try {
+        const elapsedMillis = Date.now() - reportLoadStartTime;
+        const elapsedSeconds = Math.max(elapsedMillis / 1000, 0);
+        
+        // Calculate metrics
+        const averagePredictionTimeSeconds = emailCount > 0 ? elapsedSeconds / emailCount : 0;
+        const throughputEmailsPerSecond = elapsedSeconds > 0 ? emailCount / elapsedSeconds : 0;
+        
+        // Check if response has timing info
+        const responseTime = responseData?.processingTime || responseData?.scanTime || responseData?.timeElapsed || elapsedSeconds;
+        
+        const timingData = {
+            timestamp: new Date().toISOString(),
+            startedAt: new Date(reportLoadStartTime).toISOString(),
+            endedAt: new Date().toISOString(),
+            durationSeconds: elapsedSeconds,
+            totalElapsedSeconds: elapsedSeconds,
+            emailCount: emailCount,
+            averagePredictionTimeSeconds,
+            averageResponseTimeSeconds: responseTime,
+            throughputEmailsPerSecond,
+            sourceResponseData: {
+                processingTime: responseData?.processingTime,
+                scanTime: responseData?.scanTime,
+                timeElapsed: responseData?.timeElapsed
+            }
+        };
+
+        const existingTiming = getSavedEmailSessionTiming();
+        const hasExisting = existingTiming && Object.keys(existingTiming).length > 0;
+        const hasNewTiming = averagePredictionTimeSeconds > 0 || throughputEmailsPerSecond > 0 || elapsedSeconds > 0;
+
+        if (!hasNewTiming && hasExisting) {
+            console.log('[TIMING] Preserving existing email session timing because new timing is invalid', existingTiming);
+            return existingTiming;
+        }
+
+        localStorage.setItem('emailSessionTiming', JSON.stringify(timingData));
+        
+        console.log('[TIMING] Email session timing updated:', timingData);
+        return timingData;
+    } catch (err) {
+        console.error('[TIMING] Error updating session timing', err);
+        return null;
+    }
 }
+
+
 
 function loadReportResults() {
     if (reportLoading) return;
     reportLoading = true;
+    reportLoadStartTime = Date.now();
     setSyncStatus('Syncing latest email results...');
 
     const oldScript = document.getElementById('reportJsonpScript');
@@ -973,49 +1102,21 @@ function loadReportResults() {
 }
 
 function handleReportResults(data) {
-    const storedLabels = getActualLabelsFromAllSources();
-    const previousResults = getAllEmailAnalysisResults();
-    console.log('[REPORT] Received new data with', extractEmailResults(data).length, 'records');
-    console.log('[REPORT] Previous results have', previousResults.length, 'records with labels');
-    
-    const fullResults = extractEmailResults(data).map(email => {
-        // Try to find matching previous record by email keys
-        let existingLabel = null;
-        const emailKeys = getEmailKeys(email);
-        console.log('[REPORT] Processing email with keys:', emailKeys);
-        
-        const previousRecord = previousResults.find(prev => {
-            const prevKeys = getEmailKeys(prev);
-            return prevKeys.some(pk => emailKeys.some(ek => pk === ek));
-        });
-        
-        if (previousRecord && previousRecord.Actual_Label) {
-            existingLabel = previousRecord.Actual_Label;
-            console.log('[REPORT] Found matching previous record with label:', existingLabel);
-        }
-        
-        // Fallback: try stored labels
-        if (!existingLabel) {
-            existingLabel = getStoredActualLabel(email, storedLabels);
-            if (existingLabel) {
-                console.log('[REPORT] Found label in storedLabels:', existingLabel);
-            }
-        }
-        
-        const actualLabel = normalizeActualLabel(email?.Actual_Label || existingLabel);
-        console.log('[REPORT] Final actual label for email:', actualLabel);
-        return actualLabel ? { ...email, Actual_Label: actualLabel } : email;
-    });
-    
-    if (fullResults.length > 0) {
-        reportResults = fullResults.slice(0, 50);
-        localStorage.setItem('emailAnalysisResults', JSON.stringify(fullResults));
-        console.log('[REPORT] Updated reportResults and emailAnalysisResults with', fullResults.length, 'total records');
+    const rawResults = extractEmailResults(data);
+    console.log('[REPORT] Received new data with', rawResults.length, 'records');
+
+    const labeledResults = rawResults.map(applyStoredActualLabel);
+    if (labeledResults.length > 0) {
+        reportResults = labeledResults.slice(0, 50);
+        localStorage.setItem('emailAnalysisResults', JSON.stringify(labeledResults));
+        console.log('[REPORT] Updated reportResults and emailAnalysisResults with', labeledResults.length, 'total records');
         syncRecentAnalysisFromResults(reportResults);
+        updateEmailSessionTiming(labeledResults.length, data);
     } else {
         reportResults = getAllEmailAnalysisResults().slice(0, 50);
         console.log('[REPORT] No new results, using cached');
     }
+
     clearTimeout(reportTimeoutRef);
     reportLoading = false;
     syncSystemPerformance(data);
@@ -1206,6 +1307,72 @@ function getStoredActualLabel(email, labels = getActualLabelsFromAllSources()) {
     return matchedKey ? labels[matchedKey] : "";
 }
 
+function displayMetricsCalculationDetails(records, evaluation) {
+    try {
+        const total = records.length;
+        const safeCount = records.filter(record => normalizeCategory(record) === 'SAFE').length;
+        const phishingCount = records.filter(record => normalizeCategory(record) === 'PHISHING').length;
+        const potentialCount = records.filter(record => normalizeCategory(record) === 'POTENTIAL_PHISHING').length;
+        const classifiedCount = safeCount + phishingCount + potentialCount;
+        const threatCount = phishingCount + potentialCount;
+
+        // Calculate metrics (same as in buildEmailSessionEvaluation)
+        const ppa = safeDivide(classifiedCount, total);
+        const lepr = safeDivide(safeCount, total);
+        const ppp = safeDivide(phishingCount, threatCount);
+        const pdrr = safeDivide(phishingCount, total);
+        const tlf1 = safeDivide(2 * ppp * pdrr, ppp + pdrr);
+
+        // Extract transaction metrics
+        const metrics = evaluation?.metrics || {};
+        const wta = metrics.wta || 0;
+        const tpc = metrics.tpc || 0;
+        const swdr = metrics.swdr || 0;
+        const prt = metrics.prt || 0;
+        const brt = metrics.brt || 0;
+        const throughput = metrics.throughput || 0;
+
+        // Update calculation details table
+        setText('calcPPA', `${classifiedCount} / ${total}`);
+        setText('resultPPA', formatPercent(ppa));
+        setText('calcLEPR', `${safeCount} / ${total}`);
+        setText('resultLEPR', formatPercent(lepr));
+        setText('calcPPP', threatCount > 0 ? `${phishingCount} / ${threatCount}` : 'N/A');
+        setText('resultPPP', threatCount > 0 ? formatPercent(ppp) : 'N/A');
+        setText('calcPDRR', `${phishingCount} / ${total}`);
+        setText('resultPDRR', formatPercent(pdrr));
+        setText('calcTLF1', threatCount > 0 ? `2 * (${ppp.toFixed(3)} * ${pdrr.toFixed(3)}) / (${ppp.toFixed(3)} + ${pdrr.toFixed(3)})` : 'N/A');
+        setText('resultTLF1', threatCount > 0 ? formatPercent(tlf1) : 'N/A');
+        setText('calcWTA', wta > 0 ? wta.toFixed(4) : 'No data');
+        setText('resultWTA', wta > 0 ? formatPercent(wta) : 'N/A');
+        setText('calcTPC', tpc > 0 ? tpc.toFixed(4) : 'No data');
+        setText('resultTPC', tpc > 0 ? formatPercent(tpc) : 'N/A');
+        setText('calcSWDR', swdr > 0 ? swdr.toFixed(4) : 'No data');
+        setText('resultSWDR', swdr > 0 ? formatPercent(swdr) : 'N/A');
+        
+        // Log timing data source investigation
+        const emailTiming = getEmailSessionTiming();
+        const timingHasData = Object.keys(emailTiming).length > 0;
+        console.log('[METRICS] Email timing data retrieved:', { hasData: timingHasData, emailTiming });
+        
+        setText('calcPRT', timingHasData ? `${prt.toFixed(2)}s` : 'No timing data');
+        setText('resultPRT', timingHasData ? `${prt.toFixed(2)}s` : 'N/A');
+        setText('calcBRT', `${brt.toFixed(2)}s`);
+        setText('resultBRT', `${brt.toFixed(2)}s`);
+        setText('calcThroughput', timingHasData ? `${throughput.toFixed(3)} emails/s` : 'No timing data');
+        setText('resultThroughput', timingHasData ? `${throughput.toFixed(3)} emails/s` : 'N/A');
+
+        console.log('[METRICS] Calculation details:', {
+            recordCount: total, safeCount, phishingCount, potentialCount, classifiedCount, threatCount,
+            ppa, lepr, ppp, pdrr, tlf1, wta, tpc, swdr, prt, brt, throughput,
+            timingDataAvailable: timingHasData,
+            emailTimingKeys: Object.keys(emailTiming)
+        });
+    } catch (err) {
+        console.error('[METRICS] Error displaying calculation details', err);
+    }
+}
+
 function isPredictedPhishing(email) {
     const category = normalizeCategory(email);
     return category === 'PHISHING' || category === 'POTENTIAL_PHISHING';
@@ -1348,11 +1515,119 @@ function setText(id, value) {
 }
 
 function getEmailSessionTiming() {
+    const raw = localStorage.getItem('emailSessionTiming');
+    if (!raw) return {};
+
     try {
-        return JSON.parse(localStorage.getItem('emailSessionTiming')) || {};
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === 'string') {
+            return JSON.parse(parsed);
+        }
+        return parsed || {};
     } catch (err) {
+        console.warn('[TIMING] Failed to parse emailSessionTiming raw value', raw, err);
         return {};
     }
+}
+
+function normalizeNumericValue(value) {
+    if (value === undefined || value === null) return 0;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+
+    const cleaned = String(value).trim().replace(/[^0-9eE+\-.]/g, '');
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function resolveTimingField(source, aliases) {
+    if (!source || typeof source !== 'object') return 0;
+
+    for (const alias of aliases) {
+        if (Object.prototype.hasOwnProperty.call(source, alias)) {
+            const value = normalizeNumericValue(source[alias]);
+            if (value > 0) return value;
+        }
+    }
+
+    for (const key of Object.keys(source)) {
+        const normalizedKey = String(key).toLowerCase();
+        for (const alias of aliases) {
+            if (normalizedKey.includes(alias.toLowerCase())) {
+                const value = normalizeNumericValue(source[key]);
+                if (value > 0) return value;
+            }
+        }
+    }
+
+    return 0;
+}
+
+function normalizeEmailSessionTiming(rawTiming) {
+    if (!rawTiming || typeof rawTiming !== 'object') return {};
+
+    const timing = rawTiming.timing || rawTiming.payload || rawTiming.data || rawTiming;
+
+    const emailCount = resolveTimingField(timing, [
+        'emailCount', 'totalEmails', 'emails', 'email_count', 'total_email_count', 'emailTotal'
+    ]);
+    const durationSeconds = resolveTimingField(timing, [
+        'durationSeconds', 'totalElapsedSeconds', 'elapsedSeconds', 'duration', 'totalElapsed', 'timeElapsed', 'processingTime', 'scanTime', 'duration_seconds', 'time_elapsed'
+    ]);
+    const averagePredictionTimeSeconds = resolveTimingField(timing, [
+        'averagePredictionTimeSeconds', 'avgPredictionTimeSeconds', 'averagePredictionTime', 'predictionTimeSeconds', 'predictionTime', 'avgPredictionTime', 'averageResponseTimeSeconds', 'average_prediction_time_seconds', 'prediction_time_seconds'
+    ]);
+    const throughputEmailsPerSecond = resolveTimingField(timing, [
+        'throughputEmailsPerSecond', 'emailsPerSecond', 'throughput', 'throughputPerSecond', 'throughput_sec', 'throughput_seconds', 'emails_per_second', 'throughput_per_second'
+    ]);
+    const averageResponseTimeSeconds = resolveTimingField(timing, [
+        'averageResponseTimeSeconds', 'responseTime', 'responseTimeSeconds', 'averageResponseTime', 'processingTime', 'scanTime', 'timeElapsed', 'average_response_time_seconds', 'response_time_seconds'
+    ]);
+
+    const startedAt = timing.startedAt || timing.timestamp || timing.startTime || timing.start || null;
+    const endedAt = timing.endedAt || timing.endTime || timing.end || null;
+
+    const computedDurationSeconds = durationSeconds > 0 ? durationSeconds : 0;
+    const computedAveragePredictionTimeSeconds = averagePredictionTimeSeconds > 0
+        ? averagePredictionTimeSeconds
+        : emailCount > 0 && computedDurationSeconds > 0
+            ? computedDurationSeconds / emailCount
+            : 0;
+    const computedThroughputEmailsPerSecond = throughputEmailsPerSecond > 0
+        ? throughputEmailsPerSecond
+        : computedDurationSeconds > 0
+            ? emailCount / computedDurationSeconds
+            : 0;
+
+    const output = {
+        ...timing,
+        emailCount,
+        durationSeconds: computedDurationSeconds,
+        averagePredictionTimeSeconds: computedAveragePredictionTimeSeconds,
+        averageResponseTimeSeconds: averageResponseTimeSeconds || computedAveragePredictionTimeSeconds,
+        throughputEmailsPerSecond: computedThroughputEmailsPerSecond,
+        startedAt,
+        endedAt
+    };
+
+    if ((output.durationSeconds === 0 || output.emailCount === 0) && startedAt && endedAt) {
+        const startMs = Date.parse(startedAt);
+        const endMs = Date.parse(endedAt);
+        const derivedDuration = Math.max((endMs - startMs) / 1000, 0);
+        if (derivedDuration > 0) {
+            output.durationSeconds = derivedDuration;
+            if (output.emailCount > 0) {
+                output.averagePredictionTimeSeconds = derivedDuration / output.emailCount;
+                output.throughputEmailsPerSecond = output.emailCount / derivedDuration;
+            }
+        }
+    }
+
+    return output;
+}
+
+function getSavedEmailSessionTiming() {
+    const timing = normalizeEmailSessionTiming(getEmailSessionTiming());
+    return timing && typeof timing === 'object' ? timing : {};
 }
 
 function calculateGroundTruthClassificationMetrics(records) {
@@ -1450,6 +1725,14 @@ function buildEmailSessionEvaluation() {
             console.log('[BUILD] Re-applied actualLabel:', actualLabel, 'for email key:', getEmailKeys(record)[0]);
             return actualLabel ? { ...record, Actual_Label: actualLabel } : record;
         });
+
+    if (records.length > 0) {
+        localStorage.setItem('emailAnalysisResults', JSON.stringify(records));
+        reportResults = records.slice(0, 50);
+        syncRecentAnalysisFromResults(reportResults);
+        console.log('[BUILD] Persisted label-augmented records to emailAnalysisResults and synced reportResults');
+    }
+
     console.log('[BUILD] After mapping, records:', records.length);
     console.log('[BUILD] Sample record Actual_Label:', records[0]?.Actual_Label);
     
@@ -1465,27 +1748,49 @@ function buildEmailSessionEvaluation() {
     const pdrr = safeDivide(phishingCount, total);
     const tlf1 = safeDivide(2 * ppp * pdrr, ppp + pdrr);
     const classification = calculateGroundTruthClassificationMetrics(records);
-    const transactionMetrics = normalizeTransactionMetrics(latestTransactionMetrics);
-    const emailTiming = getEmailSessionTiming();
-    console.log('[TIMING] emailTiming retrieved:', emailTiming);
-    console.log('[TIMING] transactionMetrics:', transactionMetrics);
-    const wta = transactionMetrics.wta;
-    const tpc = transactionMetrics.tpc;
-    const swdr = transactionMetrics.swdr;
-    const prt = parseMetricNumber(
-        emailTiming.averagePredictionTimeSeconds ?? emailTiming.averageResponseTimeSeconds,
-        transactionMetrics.prt
-    );
-    console.log('[TIMING] PRT (Prediction Response Time) = ', prt, 'from emailTiming.averagePredictionTimeSeconds=', emailTiming.averagePredictionTimeSeconds);
-    const brt = transactionMetrics.brt;
-    console.log('[TIMING] BRT (Blockchain Retrieval Time) = ', brt);
-    const throughput = parseMetricNumber(
-        emailTiming.throughputEmailsPerSecond,
-        transactionMetrics.throughput
-    );
-    console.log('[TIMING] Throughput = ', throughput, 'from emailTiming.throughputEmailsPerSecond=', emailTiming.throughputEmailsPerSecond);
+    setModelPerformance({
+        tp: classification.confusionMatrix.truePositive,
+        tn: classification.confusionMatrix.trueNegative,
+        fp: classification.confusionMatrix.falsePositive,
+        fn: classification.confusionMatrix.falseNegative,
+        accuracy: classification.accuracy,
+        precision: classification.precision,
+        recall: classification.recall,
+        f1: classification.f1Score
+    });
 
-    return {
+    const transactionMetrics = normalizeTransactionMetrics(latestTransactionMetrics);
+    const rawTimingObject = getEmailSessionTiming();
+    console.log('[TIMING] raw localStorage.emailSessionTiming (stringified):', JSON.stringify(rawTimingObject));
+    const emailTiming = {
+        durationSeconds: 0,
+        emailCount: 0,
+        averagePredictionTimeSeconds: 0,
+        averageResponseTimeSeconds: 0,
+        throughputEmailsPerSecond: 0,
+        ...getSavedEmailSessionTiming()
+    };
+    console.log('[TIMING] normalized saved emailTiming retrieved:', emailTiming, 'keys:', Object.keys(emailTiming));
+    console.log('[TIMING] transactionMetrics:', transactionMetrics);
+    const prt = emailTiming.averagePredictionTimeSeconds > 0
+        ? Number(emailTiming.averagePredictionTimeSeconds)
+        : emailTiming.durationSeconds > 0 && emailTiming.emailCount > 0
+            ? Number(emailTiming.durationSeconds) / Number(emailTiming.emailCount)
+            : parseMetricNumber(emailTiming.averageResponseTimeSeconds, transactionMetrics.prt);
+    console.log('[TIMING] PRT (Prediction Response Time) = ', prt, 'from saved emailTiming.averagePredictionTimeSeconds=', emailTiming.averagePredictionTimeSeconds, 'durationSeconds=', emailTiming.durationSeconds, 'emailCount=', emailTiming.emailCount, 'averageResponseTimeSeconds=', emailTiming.averageResponseTimeSeconds);
+    const brt = transactionMetrics.brt ?? 0;
+    const wta = transactionMetrics.wta ?? 0;
+    const tpc = transactionMetrics.tpc ?? 0;
+    const swdr = transactionMetrics.swdr ?? 0;
+    console.log('[TIMING] BRT (Blockchain Retrieval Time) = ', brt);
+    const throughput = emailTiming.throughputEmailsPerSecond > 0
+        ? Number(emailTiming.throughputEmailsPerSecond)
+        : emailTiming.durationSeconds > 0 && emailTiming.emailCount > 0
+            ? Number(emailTiming.emailCount) / Number(emailTiming.durationSeconds)
+            : parseMetricNumber(emailTiming.throughputEmailsPerSecond, transactionMetrics.throughput);
+    console.log('[TIMING] Throughput = ', throughput, 'from saved emailTiming.throughputEmailsPerSecond=', emailTiming.throughputEmailsPerSecond, 'durationSeconds=', emailTiming.durationSeconds, 'emailCount=', emailTiming.emailCount);
+    
+    const returnEvaluation = {
         source: 'CURRENT_SYSTEM_PERFORMANCE',
         evaluatedAt: new Date().toISOString(),
         totalSamples: total,
@@ -1505,6 +1810,11 @@ function buildEmailSessionEvaluation() {
             throughput
         }
     };
+    
+    // Display detailed calculation breakdown
+    try { displayMetricsCalculationDetails(records, returnEvaluation); } catch (err) {}
+    
+    return returnEvaluation;
 }
 
 function normalizeTransactionMetrics(payload) {
@@ -1670,17 +1980,25 @@ function renderKaggleEvaluation(payload) {
     setText('classificationFp', classificationMatrix.falsePositive);
     setText('classificationFn', classificationMatrix.falseNegative);
     setText('classificationAccuracy', formatPercent(classification.accuracy));
-    setText('classificationPrecision', formatPercent(classification.precision));
-    setText('classificationRecall', formatPercent(classification.recall));
-    setText('classificationF1', formatPercent(classification.f1Score));
+    // Avoid showing misleading 0% when precision/recall are mathematically undefined (0/0)
+    const _tp = classificationMatrix.truePositive;
+    const _fp = classificationMatrix.falsePositive;
+    const _fn = classificationMatrix.falseNegative;
+    const classificationPrecisionText = (_tp + _fp) > 0 ? formatPercent(classification.precision) : 'N/A';
+    const classificationRecallText = (_tp + _fn) > 0 ? formatPercent(classification.recall) : 'N/A';
+    const classificationF1Text = (classificationPrecisionText !== 'N/A' && classificationRecallText !== 'N/A' && (classification.precision + classification.recall) > 0) ? formatPercent(classification.f1Score) : 'N/A';
+
+    setText('classificationPrecision', classificationPrecisionText);
+    setText('classificationRecall', classificationRecallText);
+    setText('classificationF1', classificationF1Text);
     setText('kaggleCardTp', classificationMatrix.truePositive);
     setText('kaggleCardTn', classificationMatrix.trueNegative);
     setText('kaggleCardFp', classificationMatrix.falsePositive);
     setText('kaggleCardFn', classificationMatrix.falseNegative);
     setText('kaggleCardAccuracy', formatPercent(classification.accuracy));
-    setText('kaggleCardPrecision', formatPercent(classification.precision));
-    setText('kaggleCardRecall', formatPercent(classification.recall));
-    setText('kaggleCardF1', formatPercent(classification.f1Score));
+    setText('kaggleCardPrecision', classificationPrecisionText);
+    setText('kaggleCardRecall', classificationRecallText);
+    setText('kaggleCardF1', classificationF1Text);
 
     const evaluatedText = result.evaluatedAt
         ? `Last calculated: ${new Date(result.evaluatedAt).toLocaleString()} | latest ${total} of ${SESSION_METRICS_LIMIT} email(s) | ${classification.total} labelled`
@@ -1774,7 +2092,21 @@ function updateKaggleCharts(metrics, matrix) {
 }
 
 function updateModelPerformance() {
-    const metrics = calculateModelPerformance();
+    const evaluation = buildEmailSessionEvaluation();
+    const metrics = {
+        tp: evaluation.classification.confusionMatrix.truePositive,
+        tn: evaluation.classification.confusionMatrix.trueNegative,
+        fp: evaluation.classification.confusionMatrix.falsePositive,
+        fn: evaluation.classification.confusionMatrix.falseNegative,
+        total: evaluation.classification.total,
+        accuracy: evaluation.classification.accuracy,
+        precision: evaluation.classification.precision,
+        recall: evaluation.classification.recall,
+        f1: evaluation.classification.f1Score
+    };
+
+    setModelPerformance(metrics);
+
     const evaluated = metrics.total || (metrics.tp + metrics.tn + metrics.fp + metrics.fn);
 
     setText('evaluatedCount', evaluated);
@@ -1783,9 +2115,14 @@ function updateModelPerformance() {
     setText('fpCount', metrics.fp);
     setText('fnCount', metrics.fn);
     setText('accuracyScore', formatPercent(metrics.accuracy));
-    setText('precisionScore', formatPercent(metrics.precision));
-    setText('recallScore', formatPercent(metrics.recall));
-    setText('f1Score', formatPercent(metrics.f1));
+    // Show 'N/A' when precision/recall are undefined (no positive predictions or no positive ground truth)
+    const precisionStr = (metrics.tp + metrics.fp) > 0 ? formatPercent(metrics.precision) : 'N/A';
+    const recallStr = (metrics.tp + metrics.fn) > 0 ? formatPercent(metrics.recall) : 'N/A';
+    const f1Str = (precisionStr !== 'N/A' && recallStr !== 'N/A' && (metrics.precision + metrics.recall) > 0) ? formatPercent(metrics.f1) : 'N/A';
+
+    setText('precisionScore', precisionStr);
+    setText('recallScore', recallStr);
+    setText('f1Score', f1Str);
     setText('matrixTp', metrics.tp);
     setText('matrixFp', metrics.fp);
     setText('matrixFn', metrics.fn);
@@ -1879,6 +2216,7 @@ function initCharts() {
 function updateCharts() {
     const stats = getStats();
     const summary = getThreatSummary();
+    const evaluation = buildEmailSessionEvaluation();
 
     if (pieChart) {
         const pieLabels = ['Safe'];
@@ -1910,7 +2248,7 @@ function updateCharts() {
         barChart.update('none');
     }
 
-    updatePerformanceChart();
+    updatePerformanceChart(evaluation.classification);
 }
 
 function downloadPDF() {
@@ -1970,10 +2308,17 @@ function updatePdfPerformance() {
     setText('pdfTn', matrix.trueNegative);
     setText('pdfFp', matrix.falsePositive);
     setText('pdfFn', matrix.falseNegative);
+    // Avoid showing misleading 0% when precision/recall are mathematically undefined (0/0)
+    const _tp_pdf = matrix.truePositive;
+    const _fp_pdf = matrix.falsePositive;
+    const _fn_pdf = matrix.falseNegative;
     setText('pdfAccuracy', formatPercent(classification.accuracy));
-    setText('pdfPrecision', formatPercent(classification.precision));
-    setText('pdfRecall', formatPercent(classification.recall));
-    setText('pdfF1', formatPercent(classification.f1Score));
+    setText('pdfPrecision', (_tp_pdf + _fp_pdf) > 0 ? formatPercent(classification.precision) : 'N/A');
+    setText('pdfRecall', (_tp_pdf + _fn_pdf) > 0 ? formatPercent(classification.recall) : 'N/A');
+    const pdfF1Text = ((_tp_pdf + _fp_pdf) > 0 && (_tp_pdf + _fn_pdf) > 0 && (classification.precision + classification.recall) > 0)
+        ? formatPercent(classification.f1Score)
+        : 'N/A';
+    setText('pdfF1', pdfF1Text);
 
     setText('pdfPrt', `${evaluation.metrics.prt.toFixed(2)}s`);
     setText('pdfBrt', `${evaluation.metrics.brt.toFixed(2)}s`);
@@ -2314,11 +2659,12 @@ function initAnalysis() {
 }
 
 function refreshAnalysis() {
+    const evaluation = buildEmailSessionEvaluation();
     updateUI();
     renderAnalysisTable();
     updateCharts();
     updateModelPerformance();
-    renderKaggleEvaluation(buildEmailSessionEvaluation());
+    renderKaggleEvaluation(evaluation);
     updateScanSummary();
 }
 
@@ -2327,6 +2673,7 @@ window.onload = function () {
     console.log('========== REPORTS PAGE LOADED ==========');
     console.log('[INIT] localStorage.actualEmailLabels:', localStorage.getItem('actualEmailLabels'));
     console.log('[INIT] localStorage.emailAnalysisResults count:', JSON.parse(localStorage.getItem('emailAnalysisResults') || '[]').length);
+    console.log('[INIT] localStorage.emailSessionTiming:', localStorage.getItem('emailSessionTiming'));
     const firstRecord = JSON.parse(localStorage.getItem('emailAnalysisResults') || '[]')[0];
     console.log('[INIT] First record sample:', firstRecord);
     console.log('[INIT] First record Actual_Label field:', firstRecord?.Actual_Label);
@@ -2336,9 +2683,8 @@ window.onload = function () {
     initStats();
     initModelPerformance();
     initActivityTracking();
-    updateUI();
     initCharts();
-    renderKaggleEvaluation(buildEmailSessionEvaluation());
+    refreshAnalysis();
     loadTransactionAnalyticsMetrics();
     initAnalysis();
     logActivity("Visited reports page");

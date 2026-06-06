@@ -396,13 +396,29 @@ function getStoredActualLabel(email, labels = getActualLabels()) {
 
 function normalizeActualLabel(value) {
     const label = String(value || "").trim().toUpperCase();
-    if (label === "SAFE") return "SAFE";
-    if (label === "PHISHING") return "PHISHING";
+    if (label.includes("PHISH")) return "PHISHING";
+    if (label.includes("SAFE") || label.includes("LEGIT")) return "SAFE";
     return "";
 }
 
+function getActualLabelsFromAllSources() {
+    const labels = { ...getActualLabels() };
+    const cachedRecords = getAllEmailAnalysisResults();
+
+    cachedRecords.forEach(email => {
+        const actualLabel = normalizeActualLabel(email?.Actual_Label);
+        if (!actualLabel) return;
+
+        getEmailKeys(email).forEach(key => {
+            labels[key] = actualLabel;
+        });
+    });
+
+    return labels;
+}
+
 function mergeStoredActualLabelsIntoResults(results) {
-    const labels = getActualLabels();
+    const labels = getActualLabelsFromAllSources();
     return (Array.isArray(results) ? results : []).map(email => {
         const actualLabel = normalizeActualLabel(email?.Actual_Label || getStoredActualLabel(email, labels));
         return actualLabel ? { ...email, Actual_Label: actualLabel } : email;
@@ -432,6 +448,7 @@ function updateActualLabel(emailKey, value) {
     console.log('[UPDATE] Final labels:', labels);
     saveActualLabels(labels);
     updateCachedActualLabel(emailKey, normalizedValue);
+    localStorage.setItem('emailAnalysisResults', JSON.stringify(currentResults));
     renderTable(currentResults);
     logActivity("Updated actual email label");
 }
@@ -678,21 +695,45 @@ let lastCount = 0;
 let scanStartTime = 0;
 
 function getHighResolutionTime() {
-    return (window.performance && typeof performance.now === "function") ? performance.now() : Date.now();
+    return Date.now();
+}
+
+function computeEmailTimingMetrics(startMs, endMs, emailCount, responseData = {}) {
+    const elapsedSeconds = Math.max((endMs - startMs) / 1000, 0);
+    const averagePredictionTimeSeconds = emailCount > 0 ? elapsedSeconds / emailCount : 0;
+    const throughputEmailsPerSecond = elapsedSeconds > 0 ? emailCount / elapsedSeconds : 0;
+    const averageResponseTimeSeconds = responseData?.processingTime || responseData?.scanTime || responseData?.timeElapsed || elapsedSeconds;
+
+    return {
+        startedAt: new Date(startMs).toISOString(),
+        endedAt: new Date(endMs).toISOString(),
+        durationSeconds: elapsedSeconds,
+        emailCount: emailCount,
+        averagePredictionTimeSeconds,
+        averageResponseTimeSeconds,
+        throughputEmailsPerSecond,
+        sourceResponseData: {
+            processingTime: responseData?.processingTime,
+            scanTime: responseData?.scanTime,
+            timeElapsed: responseData?.timeElapsed
+        }
+    };
 }
 
 function saveEmailSessionTiming(timing) {
-    localStorage.setItem("emailSessionTiming", JSON.stringify({
+    const payload = {
         ...timing,
         savedAt: new Date().toISOString()
-    }));
+    };
+    localStorage.setItem("emailSessionTiming", JSON.stringify(payload));
+    console.log('[TIMING] saved emailSessionTiming payload:', payload);
 }
 
 // 🚀 LOAD RESULTS
 function loadResults() {
     if (loading) return;
     loading = true;
-    scanStartTime = getHighResolutionTime();
+    scanStartTime = Date.now();
 
     const sortType =
         document.getElementById("sortOrder")?.value || "newest";
@@ -751,16 +792,9 @@ function loadCachedOrTestData() {
         renderTable(currentResults);
         syncReportDataFromResults(currentResults);
 
-        // Ensure timing metrics are saved even with cached data
+        // Keep a cached timing value so reports can show values if scan data is unavailable
         const now = new Date();
-        saveEmailSessionTiming({
-            startedAt: now.toISOString(),
-            endedAt: now.toISOString(),
-            durationSeconds: 2, // Simulate ~2 second processing time
-            emailCount: currentResults.length,
-            averagePredictionTimeSeconds: currentResults.length > 0 ? 2 / currentResults.length : 0,
-            throughputEmailsPerSecond: currentResults.length > 0 ? currentResults.length / 2 : 0
-        });
+        saveEmailSessionTiming(computeEmailTimingMetrics(now.getTime() - 2000, now.getTime(), currentResults.length, {}));
         logActivity(`Loaded ${currentResults.length} cached emails (live data unavailable)`);
         loading = false;
         setTotalCount();
@@ -777,7 +811,9 @@ function handleData(data) {
     currentResults = extractEmailResults(data).slice(0, 50);
     currentResults = mergeStoredActualLabelsIntoResults(currentResults);
     data = currentResults;
-    const durationSeconds = scanStartTime ? Math.max((getHighResolutionTime() - scanStartTime) / 1000, 0) : 0;
+    const endTime = Date.now();
+    const timingMetrics = computeEmailTimingMetrics(scanStartTime, endTime, currentResults.length, data);
+    console.log('[TIMING] email-results computed timingMetrics:', timingMetrics);
 
     const phishingCount = data.filter(e => normalizeCategory(e) === "PHISHING").length;
     const potentialCount = data.filter(e => normalizeCategory(e) === "POTENTIAL_PHISHING").length;
@@ -786,14 +822,7 @@ function handleData(data) {
     clearTimeout(timeoutRef);
 
     syncReportDataFromResults(currentResults);
-    saveEmailSessionTiming({
-        startedAt: new Date(Date.now() - (durationSeconds * 1000)).toISOString(),
-        endedAt: new Date().toISOString(),
-        durationSeconds,
-        emailCount: currentResults.length,
-        averagePredictionTimeSeconds: currentResults.length > 0 ? durationSeconds / currentResults.length : 0,
-        throughputEmailsPerSecond: durationSeconds > 0 ? currentResults.length / durationSeconds : 0
-    });
+    saveEmailSessionTiming(timingMetrics);
     const totalCount = Number(data.totalCount || data.total_count || currentResults.length || 0);
     document.getElementById("totalCount").innerText = totalCount;
 
@@ -959,12 +988,24 @@ function showError(message) {
 
 
 // 🌐 GO TO LIVE REPORTS
+function persistCurrentLabels() {
+    const labels = getActualLabels();
+    saveActualLabels(labels);
+
+    if (Array.isArray(currentResults) && currentResults.length) {
+        currentResults = mergeStoredActualLabelsIntoResults(currentResults);
+        localStorage.setItem('emailAnalysisResults', JSON.stringify(currentResults));
+    }
+}
+
 function goReports() {
+    persistCurrentLabels();
     logActivity("Navigated to reports page");
     window.open("reports.html", "_top");
 }
 
 function goDashboard() {
+    persistCurrentLabels();
     logActivity("Navigated to dashboard");
     window.open("dashboard.html", "_top");
 }

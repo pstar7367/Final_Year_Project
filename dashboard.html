@@ -358,6 +358,13 @@ function getEmailField(email, names) {
     return "";
 }
 
+function normalizeActualLabel(value) {
+    const label = String(value || '').trim().toUpperCase();
+    if (label.includes('PHISH')) return 'PHISHING';
+    if (label.includes('SAFE') || label.includes('LEGIT')) return 'SAFE';
+    return '';
+}
+
 function getEmailKeys(email) {
     const idKeys = [
         getEmailField(email, ["Message_ID", "Message ID", "Message Id", "messageId", "message_id"]),
@@ -429,9 +436,42 @@ function loadDashboardResults() {
 
 function handleDashboardResults(data) {
     const latestResults = extractEmailResults(data).slice(0, 50);
-    localStorage.setItem("emailAnalysisResults", JSON.stringify(latestResults));
+    const mergedResults = mergeActualLabelsIntoResults(latestResults);
+    localStorage.setItem("emailAnalysisResults", JSON.stringify(mergedResults));
     dashboardLoading = false;
     updateUI();
+}
+
+function mergeActualLabelsIntoResults(results) {
+    const storedLabels = JSON.parse(localStorage.getItem('actualEmailLabels')) || {};
+    const cachedResults = JSON.parse(localStorage.getItem('emailAnalysisResults')) || [];
+
+    return (Array.isArray(results) ? results : []).map(email => {
+        const keys = getEmailKeys(email);
+        let actualLabel = '';
+
+        if (Array.isArray(cachedResults)) {
+            for (const existing of cachedResults) {
+                const existingKeys = getEmailKeys(existing);
+                if (existingKeys.some(key => keys.includes(key)) && existing.Actual_Label) {
+                    actualLabel = existing.Actual_Label;
+                    break;
+                }
+            }
+        }
+
+        if (!actualLabel) {
+            const matchedKey = keys.find(key => storedLabels[key]);
+            if (matchedKey) {
+                actualLabel = normalizeActualLabel(storedLabels[matchedKey]);
+            }
+        }
+
+        if (actualLabel) {
+            return { ...email, Actual_Label: actualLabel };
+        }
+        return email;
+    });
 }
 
 function syncStatsFromEmailResults() {
