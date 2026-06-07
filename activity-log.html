@@ -3,176 +3,193 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Activity Log</title>
-
+<title>Activity Log - SecureTrace</title>
 <script src="https://unpkg.com/lucide@latest"></script>
-
 <style>
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: "Segoe UI", sans-serif;
+* { margin:0; padding:0; box-sizing:border-box; font-family:"Segoe UI",sans-serif; }
+body { display:flex; background:#f5f7fb; min-height:100vh; }
+
+/* ── Sidebar ── */
+.sidebar { width:230px; min-height:100vh; background:#fff; padding:20px; border-right:1px solid #eee; flex-shrink:0; }
+.sidebar-header { display:flex; align-items:center; gap:10px; margin-bottom:30px; }
+.menu a { display:flex; align-items:center; gap:10px; padding:12px; margin-bottom:6px; text-decoration:none; color:#333; border-radius:8px; }
+.menu a.active { background:#e6f0ff; color:#2b6cff; }
+.menu a:hover { background:#f0f4ff; }
+
+/* ── Main ── */
+.main { flex:1; padding:30px; overflow-x:hidden; }
+
+/* ── Page header ── */
+.log-page-header {
+    display:flex; align-items:center; justify-content:space-between;
+    flex-wrap:wrap; gap:12px; margin-bottom:20px;
+}
+.log-page-title { display:flex; align-items:center; gap:10px; }
+.log-page-title h2 { font-size:20px; font-weight:700; color:#1a1f36; }
+.log-header-actions { display:flex; align-items:center; gap:10px; }
+
+/* ── Session strip ── */
+.session-strip {
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    background:#fff; border:1px solid #eef1fb; border-radius:10px;
+    padding:12px 18px; margin-bottom:20px; font-size:13px; color:#555;
+}
+.session-strip .chip {
+    display:inline-flex; align-items:center; gap:6px;
+    background:#f0f5ff; border:1px solid #d0e0ff; border-radius:20px;
+    padding:4px 12px; font-weight:700; color:#2b6cff; font-size:13px;
+}
+.session-strip .dot { width:8px; height:8px; border-radius:50%; background:#52c41a; display:inline-block; flex-shrink:0; }
+.session-strip .sep { color:#ddd; }
+
+/* ── Log card ── */
+.log-card { background:#fff; border-radius:14px; box-shadow:0 4px 20px rgba(0,0,0,0.06); overflow:hidden; }
+
+/* ── Column header ── */
+.log-table-header {
+    display:grid; grid-template-columns:110px 44px 1fr 160px;
+    padding:10px 20px; background:#f8faff;
+    border-bottom:1px solid #eef1fb;
+    font-size:11px; font-weight:700; color:#aaa; letter-spacing:.7px; text-transform:uppercase;
 }
 
-body {
-    display: flex;
-    background: #f5f7fb;
+/* ── Log entry ── */
+.log-entry {
+    display:grid; grid-template-columns:110px 44px 1fr 160px;
+    align-items:center; padding:13px 20px;
+    border-bottom:1px solid #f5f7fb;
+    border-left:3px solid transparent;
+    transition:background .12s;
 }
+.log-entry:last-child { border-bottom:none; }
+.log-entry:hover { background:#fafbff; }
+.log-entry.type-page    { border-left-color:#9b59b6; }
+.log-entry.type-nav     { border-left-color:#2b6cff; }
+.log-entry.type-action  { border-left-color:#52c41a; }
+.log-entry.type-warning { border-left-color:#faad14; }
+.log-entry.type-info    { border-left-color:#ccc; }
 
-/* ===== SIDEBAR ===== */
-.sidebar {
-    width: 230px;
-    height: 100vh;
-    background: #fff;
-    padding: 20px;
-    border-right: 1px solid #eee;
+/* ── Badge ── */
+.log-badge {
+    display:inline-flex; align-items:center; gap:4px;
+    font-size:10px; font-weight:700; letter-spacing:.5px;
+    padding:3px 9px; border-radius:20px; text-transform:uppercase;
 }
+.badge-page    { background:#f3e8ff; color:#7c3aed; }
+.badge-nav     { background:#e6f0ff; color:#2b6cff; }
+.badge-action  { background:#f0fff0; color:#2e7d32; }
+.badge-warning { background:#fffde7; color:#b45309; }
+.badge-info    { background:#f5f5f5; color:#888; }
 
-.sidebar-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 30px;
+/* ── Icon ── */
+.log-icon {
+    width:30px; height:30px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
 }
+.log-icon.ic-page    { background:#f3e8ff; color:#7c3aed; }
+.log-icon.ic-nav     { background:#e6f0ff; color:#2b6cff; }
+.log-icon.ic-action  { background:#f0fff0; color:#2e7d32; }
+.log-icon.ic-warning { background:#fffde7; color:#b45309; }
+.log-icon.ic-info    { background:#f5f5f5; color:#888; }
 
-.menu a {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px;
-    margin-bottom: 10px;
-    text-decoration: none;
-    color: #333;
-    border-radius: 8px;
+/* ── Message ── */
+.log-message { font-size:13.5px; color:#2d3142; line-height:1.4; padding:0 12px; }
+
+/* ── Timestamp ── */
+.log-time-col { text-align:right; }
+.log-abs  { font-size:12px; color:#555; }
+.log-rel  { font-size:11px; color:#bbb; margin-top:2px; }
+
+/* ── Empty state ── */
+.log-empty {
+    display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:12px; padding:60px 20px; color:#ccc;
 }
+.log-empty p { font-size:14px; color:#aaa; }
 
-.menu a.active {
-    background: #e6f0ff;
-    color: #2b6cff;
+/* ── Buttons ── */
+.btn {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:8px 16px; border:none; border-radius:8px;
+    background:#2b6cff; color:#fff; font-size:13px;
+    font-weight:600; cursor:pointer; transition:background .15s;
 }
+.btn:hover { background:#1a5aee; }
+.btn-danger { background:#ff4d4f; }
+.btn-danger:hover { background:#e63e40; }
+.btn-ghost { background:#f5f7fb; color:#555; border:1px solid #e0e4ef; }
+.btn-ghost:hover { background:#eef1fb; }
 
-.menu a:hover {
-    background: #f0f4ff;
-}
-
-/* ===== MAIN ===== */
-.main {
-    flex: 1;
-    padding: 30px;
-}
-
-.header {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 20px;
-}
-
-.header h2 {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-/* ===== CARD ===== */
-.card {
-    background: white;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0 10px 20px rgba(0,0,0,0.05);
-}
-
-/* ===== LOG ITEMS ===== */
-.log-item {
-    display: flex;
-    justify-content: space-between;
-    padding: 14px;
-    border-bottom: 1px solid #eee;
-}
-
-.log-text {
-    font-weight: 500;
-}
-
-.log-time {
-    color: #888;
-    font-size: 13px;
-}
-
-/* MOBILE */
-@media (max-width: 768px) {
-    body { flex-direction: column; }
-
-    .sidebar {
-        width: 100%;
-        height: auto;
-        border-right: none;
-        border-bottom: 1px solid #eee;
-    }
-
-    .menu {
-        display: flex;
-        overflow-x: auto;
-        gap: 10px;
-    }
-
-    .main {
-        padding: 15px;
-    }
+/* ── Mobile ── */
+@media (max-width:768px) {
+    body { flex-direction:column; }
+    .sidebar { width:100%; min-height:auto; }
+    .log-table-header { display:none; }
+    .log-entry { grid-template-columns:auto 1fr; grid-template-rows:auto auto; gap:6px 10px; }
+    .log-time-col { grid-column:1/-1; text-align:left; }
+    .log-message { padding:0; grid-column:2; }
 }
 </style>
 </head>
-
 <body>
 
-<!-- ===== SIDEBAR ===== -->
+<!-- Sidebar -->
 <div class="sidebar">
-
     <div class="sidebar-header">
         <i data-lucide="shield"></i>
         <strong>SecureTrace</strong>
     </div>
-
     <div class="menu">
-        <a href="dashboard.html">
-            <i data-lucide="home"></i> Dashboard
-        </a>
-
-        <a href="email.html">
-            <i data-lucide="mail"></i> Email Filtering
-        </a>
-
-        <a href="#">
-            <i data-lucide="activity"></i> Transaction Analysis
-        </a>
-
-        <a href="activity-log.html" class="active">
-            <i data-lucide="file-text"></i> Activity Log
-        </a>
-
-        <a href="reports.html">
-            <i data-lucide="bar-chart"></i> Reports
-        </a>
+        <a href="dashboard.html"><i data-lucide="home"></i> Dashboard</a>
+        <a href="email.html"><i data-lucide="mail"></i> Email Filtering</a>
+        <a href="#"><i data-lucide="activity"></i> Transaction Analysis</a>
+        <a href="activity-log.html" class="active"><i data-lucide="file-text"></i> Activity Log</a>
+        <a href="reports.html"><i data-lucide="bar-chart"></i> Reports</a>
     </div>
-
 </div>
 
-<!-- ===== MAIN ===== -->
+<!-- Main -->
 <div class="main">
 
-    <div class="header">
-        <h2>
-            <i data-lucide="file-text"></i>
-            Activity Log
-        </h2>
-
-        <button onclick="clearLogs()" style="padding:8px 12px; border:none; background:#ff4d4f; color:white; border-radius:6px;">
-            <i data-lucide="trash-2"></i> Clear
-        </button>
+    <!-- Page header -->
+    <div class="log-page-header">
+        <div class="log-page-title">
+            <i data-lucide="file-text" style="color:#2b6cff;width:22px;height:22px;"></i>
+            <h2>Activity Log</h2>
+        </div>
+        <div class="log-header-actions">
+            <button class="btn btn-ghost" onclick="loadLogs()">
+                <i data-lucide="refresh-cw"></i> Refresh
+            </button>
+            <button class="btn btn-danger" onclick="clearLogs()">
+                <i data-lucide="trash-2"></i> Clear Session Logs
+            </button>
+        </div>
     </div>
 
-    <div class="card" id="logContainer">
-        Loading logs...
+    <!-- Session strip -->
+    <div class="session-strip">
+        <span class="chip">
+            <i data-lucide="user" style="width:13px;height:13px;"></i>
+            User&nbsp;<span id="sessionUserId">—</span>
+        </span>
+        <span class="sep">|</span>
+        <span><span class="dot"></span>&nbsp; Session active</span>
+        <span class="sep">|</span>
+        <span>Started: <strong id="sessionStart">—</strong></span>
+        <span class="sep">|</span>
+        <span id="eventCount" style="font-weight:600;">0</span>&nbsp;events
+    </div>
+
+    <!-- Log card -->
+    <div class="log-card">
+        <div class="log-table-header">
+            <div>Type</div>
+            <div></div>
+            <div>Event</div>
+            <div style="text-align:right;">Timestamp</div>
+        </div>
+        <div id="logContainer"></div>
     </div>
 
 </div>
@@ -180,69 +197,123 @@ body {
 <script>
 lucide.createIcons();
 
+/* ── Session identity ── */
+function getSessionUserId() {
+    return sessionStorage.getItem('secureTraceUserId') || 'guest';
+}
+function getActivityLogKey() {
+    return `activityLogs_${getSessionUserId()}`;
+}
+
+/* ── Session start tracking ── */
+function initSessionStart() {
+    const key = `sessionStart_${getSessionUserId()}`;
+    if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, new Date().toLocaleString());
+    }
+    return sessionStorage.getItem(key);
+}
+
+/* ── Log type classifier ── */
+function classifyLog(message) {
+    const m = String(message).toLowerCase();
+    if (m.includes('visited') || m.includes('page')) return 'page';
+    if (m.includes('nav') || m.includes('navigation') || m.includes('link')) return 'nav';
+    if (m.includes('cleared') || m.includes('delete') || m.includes('remove')) return 'warning';
+    if (m.includes('clicked') || m.includes('button') || m.includes('sync') || m.includes('download')) return 'action';
+    return 'info';
+}
+
+const TYPE_LABEL = { page:'Page', nav:'Navigation', action:'Action', warning:'Warning', info:'Info' };
+const TYPE_ICON  = { page:'map-pin', nav:'navigation', action:'zap', warning:'alert-triangle', info:'info' };
+
+/* ── Relative time ── */
+function relativeTime(dateStr) {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    if (isNaN(diff)) return '';
+    const s = Math.floor(diff / 1000);
+    if (s < 10)  return 'just now';
+    if (s < 60)  return `${s}s ago`;
+    const m = Math.floor(s / 60);
+    if (m < 60)  return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24)  return `${h}h ago`;
+    return `${Math.floor(h/24)}d ago`;
+}
+
+function escapeHtml(t) {
+    return String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+/* ── Log activity ── */
 function logActivity(message) {
-    const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
-
-    logs.unshift({
-        message: message,
-        time: new Date().toLocaleString()
-    });
-
+    const key  = getActivityLogKey();
+    const logs = JSON.parse(localStorage.getItem(key)) || [];
+    logs.unshift({ message, time: new Date().toLocaleString() });
     if (logs.length > 100) logs.pop();
-
-    localStorage.setItem("activityLogs", JSON.stringify(logs));
+    localStorage.setItem(key, JSON.stringify(logs));
 }
 
-function initActivityTracking() {
-    document.body.addEventListener('click', function (event) {
-        const anchor = event.target.closest('a');
-        if (anchor && anchor.href) {
-            logActivity(`Clicked navigation link: ${anchor.textContent.trim() || anchor.href}`);
-            return;
-        }
-
-        const button = event.target.closest('button,input[type="button"],input[type="submit"]');
-        if (button) {
-            logActivity(`Clicked button: ${button.textContent.trim()}`);
-        }
-    }, true);
-}
-
-// 📥 LOAD LOGS
+/* ── Render ── */
 function loadLogs() {
-    const container = document.getElementById("logContainer");
-    const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
+    const userId    = getSessionUserId();
+    const logs      = JSON.parse(localStorage.getItem(getActivityLogKey())) || [];
+    const start     = initSessionStart();
+    const container = document.getElementById('logContainer');
+
+    document.getElementById('sessionUserId').textContent = userId;
+    document.getElementById('sessionStart').textContent  = start;
+    document.getElementById('eventCount').textContent    = logs.length;
 
     if (logs.length === 0) {
-        container.innerHTML = "No activity yet";
+        container.innerHTML = `
+            <div class="log-empty">
+                <i data-lucide="inbox" style="width:44px;height:44px;"></i>
+                <p>No activity recorded for session <strong>${escapeHtml(userId)}</strong> yet.</p>
+            </div>`;
+        lucide.createIcons();
         return;
     }
 
-    container.innerHTML = "";
-
-    logs.forEach(log => {
-
-        const item = `
-        <div class="log-item">
-            <div class="log-text">${log.message}</div>
-            <div class="log-time">${log.time}</div>
-        </div>
-        `;
-
-        container.innerHTML += item;
-    });
+    container.innerHTML = logs.map(log => {
+        const t = classifyLog(log.message);
+        return `
+        <div class="log-entry type-${t}">
+            <div><span class="log-badge badge-${t}">${TYPE_LABEL[t]}</span></div>
+            <div>
+                <div class="log-icon ic-${t}">
+                    <i data-lucide="${TYPE_ICON[t]}" style="width:14px;height:14px;"></i>
+                </div>
+            </div>
+            <div class="log-message">${escapeHtml(log.message)}</div>
+            <div class="log-time-col">
+                <div class="log-abs">${escapeHtml(log.time)}</div>
+                <div class="log-rel">${relativeTime(log.time)}</div>
+            </div>
+        </div>`;
+    }).join('');
 
     lucide.createIcons();
 }
 
-// 🗑️ CLEAR LOGS
+/* ── Clear ── */
 function clearLogs() {
     logActivity("Cleared activity logs");
-    localStorage.removeItem("activityLogs");
+    localStorage.removeItem(getActivityLogKey());
     loadLogs();
 }
 
-// 🔄 AUTO REFRESH
+/* ── Activity tracking ── */
+function initActivityTracking() {
+    document.body.addEventListener('click', e => {
+        const a = e.target.closest('a');
+        if (a?.href) { logActivity(`Clicked nav: ${a.textContent.trim() || a.href}`); return; }
+        const btn = e.target.closest('button,input[type="button"],input[type="submit"]');
+        if (btn) logActivity(`Clicked button: ${btn.textContent.trim()}`);
+    }, true);
+}
+
 setInterval(loadLogs, 3000);
 
 window.onload = function () {

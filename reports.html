@@ -112,6 +112,23 @@ body { display: flex; background: #f5f7fb; min-height: 100vh; }
 }
 
 /* ── Batch Evaluator ── */
+.eval-auto-header { margin-bottom: 6px; }
+.eval-hint { font-size: 13px; color: #888; margin-bottom: 14px; line-height: 1.5; }
+.eval-status-inline { font-size: 13px; margin-left: 4px; }
+.eval-divider { border: none; border-top: 1px solid #eef1fb; margin: 24px 0; }
+
+/* avg base-param cards */
+.eval-base-grid {
+    display: grid; grid-template-columns: repeat(4,1fr);
+    gap: 12px; margin-top: 16px;
+}
+.eval-base-card {
+    background: #f8faff; border: 1px solid #eef1fb;
+    border-radius: 10px; padding: 14px; text-align: center;
+}
+.eval-base-card .val { font-size: 26px; font-weight: 700; color: #2b6cff; }
+.eval-base-card .lbl { font-size: 12px; color: #888; margin-top: 2px; }
+
 .eval-input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 .eval-label { display: block; font-size: 13px; font-weight: 600; color: #333; margin-bottom: 6px; }
 .eval-label span { font-weight: 400; color: #888; }
@@ -182,6 +199,23 @@ body { display: flex; background: #f5f7fb; min-height: 100vh; }
 .badge-green { background: #f0fff0; color: #2e7d32; }
 .badge-yellow { background: #fffde7; color: #b45309; }
 .badge-red { background: #fff0f0; color: #c62828; }
+
+/* ── Performance Trend Chart ── */
+.perf-card { margin-top: 20px; }
+.perf-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.perf-toggles { display: flex; gap: 6px; }
+.perf-toggle {
+    font-size: 12px; font-weight: 600; padding: 5px 12px;
+    border: 1.5px solid #d0d8f0; border-radius: 20px;
+    background: #fff; color: #666; cursor: pointer; transition: all .15s;
+}
+.perf-toggle.active { background: #2b6cff; color: #fff; border-color: #2b6cff; }
+.perf-canvas-wrap { position: relative; height: 300px; }
+
+/* ── Print / PDF ── */
+@media print {
+    .no-print { display: none !important; }
+}
 
 /* ── Mobile ── */
 @media (max-width: 768px) {
@@ -308,6 +342,7 @@ body { display: flex; background: #f5f7fb; min-height: 100vh; }
     </div>
 
     <!-- ── Batch ML Evaluator ── -->
+    <div class="no-print">
     <div class="section-header">
         <i data-lucide="cpu" style="color:#2b6cff; width:18px; height:18px; flex-shrink:0;"></i>
         <h2>Batch ML Evaluator</h2>
@@ -315,43 +350,19 @@ body { display: flex; background: #f5f7fb; min-height: 100vh; }
     </div>
 
     <div class="card">
-        <div class="card-title">Input Data</div>
 
-        <div class="eval-input-grid">
-            <div>
-                <label class="eval-label" for="yTrue">
-                    y_true <span>— actual labels (0 or 1, comma/space separated)</span>
-                </label>
-                <textarea class="eval-textarea" id="yTrue"
-                    placeholder="e.g. 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0"></textarea>
-            </div>
-            <div>
-                <label class="eval-label" for="yPred">
-                    y_pred <span>— predicted labels (same length as y_true)</span>
-                </label>
-                <textarea class="eval-textarea" id="yPred"
-                    placeholder="e.g. 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1"></textarea>
-            </div>
-        </div>
-
-        <div class="eval-options">
-            <label>
-                Batch size:
-                <input type="number" id="batchSize" value="20" min="1" max="1000">
-            </label>
-        </div>
-
-        <div class="eval-btn-row">
-            <button class="btn" onclick="runEvaluation()">
-                <i data-lucide="play"></i> Run Analysis
-            </button>
-            <button class="btn btn-secondary" onclick="loadSampleData()">
-                <i data-lucide="database"></i> Load Sample Data
-            </button>
-            <button class="btn btn-secondary" onclick="clearEvaluator()">
-                <i data-lucide="trash-2"></i> Clear
-            </button>
+        <div style="display:none;">
+            <textarea id="yTrue"></textarea>
+            <textarea id="yPred"></textarea>
+            <input type="number" id="batchSize" value="20" min="1" max="1000">
             <span class="eval-error" id="evalError"></span>
+        </div>
+
+        <div class="eval-btn-row" style="margin-bottom:18px;">
+            <button class="btn" onclick="loadSampleData();runEvaluation();">
+                <i data-lucide="play"></i> Run Evaluation
+            </button>
+            <span id="evalSessionNote" style="font-size:12px;color:#aaa;margin-left:8px;">Results are session-only — cleared on new browser open.</span>
         </div>
 
         <!-- Summary strip (shown after run) -->
@@ -387,6 +398,22 @@ body { display: flex; background: #f5f7fb; min-height: 100vh; }
             </div>
         </div>
     </div>
+
+    <!-- ── Performance Trend Chart ── -->
+    <div class="card perf-card" id="perfCard" style="display:none;">
+        <div class="perf-header">
+            <div class="card-title" style="margin:0;">Model Performance Trend (per 20-Email Batch)</div>
+            <div class="perf-toggles">
+                <button class="perf-toggle active" id="toggleCounts" onclick="switchPerfView('counts')">TP / TN / FP / FN</button>
+                <button class="perf-toggle" id="toggleMetrics" onclick="switchPerfView('metrics')">Precision / Recall / F1</button>
+            </div>
+        </div>
+        <div class="perf-canvas-wrap">
+            <canvas id="perfChart"></canvas>
+        </div>
+    </div>
+
+    </div><!-- /.no-print -->
 
 </div><!-- /.main -->
 
@@ -690,11 +717,18 @@ function downloadPDF() {
 }
 
 /* ── Activity log ── */
+function getSessionUserId() {
+    return sessionStorage.getItem('secureTraceUserId') || 'guest';
+}
+function getActivityLogKey() {
+    return `activityLogs_${getSessionUserId()}`;
+}
 function logActivity(message) {
-    const logs=JSON.parse(localStorage.getItem("activityLogs"))||[];
+    const key=getActivityLogKey();
+    const logs=JSON.parse(localStorage.getItem(key))||[];
     logs.unshift({message,time:new Date().toLocaleString()});
     if (logs.length>100) logs.pop();
-    localStorage.setItem("activityLogs",JSON.stringify(logs));
+    localStorage.setItem(key,JSON.stringify(logs));
 }
 function initActivityTracking() {
     document.body.addEventListener('click',e=>{
@@ -707,6 +741,7 @@ function initActivityTracking() {
 /* ════════════════════════════════════════
    BATCH ML EVALUATOR
 ════════════════════════════════════════ */
+
 function evaluateInBatches(yTrue, yPred, batchSize=20) {
     const results=[];
     for (let i=0; i<yTrue.length; i+=batchSize) {
@@ -762,6 +797,7 @@ function runEvaluation() {
     const batches=evaluateInBatches(yTrue,yPred,batchSize);
     renderEvalTable(batches);
     renderEvalSummary(batches);
+    renderPerfChart(batches);
 }
 
 function renderEvalTable(batches) {
@@ -805,6 +841,82 @@ function renderEvalSummary(batches) {
     setText('sumRecall',`${(avgR*100).toFixed(1)}%`);
     setText('sumF1',`${(avgF1*100).toFixed(1)}%`);
     document.getElementById('evalSummary').classList.add('visible');
+}
+
+/* ── Performance Trend Chart ── */
+let perfChartInstance = null;
+let perfBatchData     = [];
+let perfViewMode      = 'counts';
+
+function renderPerfChart(batches) {
+    perfBatchData = batches;
+    document.getElementById('perfCard').style.display = 'block';
+    drawPerfChart();
+}
+
+function switchPerfView(mode) {
+    perfViewMode = mode;
+    document.getElementById('toggleCounts').classList.toggle('active', mode === 'counts');
+    document.getElementById('toggleMetrics').classList.toggle('active', mode === 'metrics');
+    drawPerfChart();
+}
+
+function drawPerfChart() {
+    const batches = perfBatchData;
+    if (!batches || batches.length === 0) return;
+
+    const labels = batches.map(b => `Batch ${b.batchIndex}`);
+
+    let datasets;
+    if (perfViewMode === 'counts') {
+        datasets = [
+            { label: 'TP', data: batches.map(b=>b.counts.tp), borderColor:'#2b6cff', backgroundColor:'rgba(43,108,255,0.08)', tension:.35, pointRadius:4, fill:true },
+            { label: 'TN', data: batches.map(b=>b.counts.tn), borderColor:'#52c41a', backgroundColor:'rgba(82,196,26,0.08)',  tension:.35, pointRadius:4, fill:true },
+            { label: 'FP', data: batches.map(b=>b.counts.fp), borderColor:'#faad14', backgroundColor:'rgba(250,173,20,0.08)', tension:.35, pointRadius:4, fill:true },
+            { label: 'FN', data: batches.map(b=>b.counts.fn), borderColor:'#ff4d4f', backgroundColor:'rgba(255,77,79,0.08)',  tension:.35, pointRadius:4, fill:true },
+        ];
+    } else {
+        datasets = [
+            { label: 'Precision', data: batches.map(b=>+(b.metrics.precision*100).toFixed(1)), borderColor:'#2b6cff', backgroundColor:'rgba(43,108,255,0.08)', tension:.35, pointRadius:4, fill:true },
+            { label: 'Recall',    data: batches.map(b=>+(b.metrics.recall*100).toFixed(1)),    borderColor:'#52c41a', backgroundColor:'rgba(82,196,26,0.08)',  tension:.35, pointRadius:4, fill:true },
+            { label: 'F1-Score',  data: batches.map(b=>+(b.metrics.f1*100).toFixed(1)),        borderColor:'#9b59b6', backgroundColor:'rgba(155,89,182,0.08)', tension:.35, pointRadius:4, fill:true },
+        ];
+    }
+
+    const ctx = document.getElementById('perfChart').getContext('2d');
+    if (perfChartInstance) perfChartInstance.destroy();
+    perfChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'bottom', labels: { boxWidth: 12, padding: 16, font: { size: 12 } } },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => {
+                            const v = ctx.parsed.y;
+                            return ` ${ctx.dataset.label}: ${perfViewMode === 'metrics' ? v + '%' : v}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { grid: { color: '#f0f2f8' }, ticks: { font: { size: 12 } } },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: '#f0f2f8' },
+                    ticks: {
+                        font: { size: 12 },
+                        callback: v => perfViewMode === 'metrics' ? v + '%' : v,
+                        precision: 0
+                    }
+                }
+            }
+        }
+    });
 }
 
 function loadSampleData() {

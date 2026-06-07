@@ -187,6 +187,7 @@ function authenticate() {
         return;
     }
 
+    sessionStorage.setItem('secureTraceUserId', userId);
     window.location.href = "dashboard.html";
 }
 </script>
