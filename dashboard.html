@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SecureTrace Dashboard</title>
+<script>if (!sessionStorage.getItem('secureTraceUserId')) { window.location.replace('index.html'); }</script>
 
 <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -518,18 +519,19 @@ function openTransaction() {
     window.location.href = "https://your-transaction-tool-link.com";
 }
 
-// 🧠 GLOBAL ACTIVITY LOGGER
+// 🧠 GLOBAL ACTIVITY LOGGER — user-keyed
+function getSessionUserId() {
+    return sessionStorage.getItem('secureTraceUserId') || 'guest';
+}
+function getActivityLogKey() {
+    return 'activityLogs_' + getSessionUserId();
+}
 function logActivity(message) {
-    const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
-
-    logs.unshift({
-        message: message,
-        time: new Date().toLocaleString()
-    });
-
+    const key = getActivityLogKey();
+    const logs = JSON.parse(localStorage.getItem(key)) || [];
+    logs.unshift({ message, time: new Date().toLocaleString() });
     if (logs.length > 100) logs.pop();
-
-    localStorage.setItem("activityLogs", JSON.stringify(logs));
+    localStorage.setItem(key, JSON.stringify(logs));
 }
 
 function initActivityTracking() {
