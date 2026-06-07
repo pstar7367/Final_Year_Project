@@ -359,10 +359,10 @@ body { display: flex; background: #f5f7fb; min-height: 100vh; }
         </div>
 
         <div class="eval-btn-row" style="margin-bottom:18px;">
-            <button class="btn" onclick="loadSampleData();runEvaluation();">
+            <button class="btn" onclick="runEvaluation();">
                 <i data-lucide="play"></i> Run Evaluation
             </button>
-            <span id="evalSessionNote" style="font-size:12px;color:#aaa;margin-left:8px;">Results are session-only — cleared on new browser open.</span>
+            <span id="evalSessionNote" style="font-size:12px;color:#aaa;margin-left:8px;">Uses latest email analysis results from your session.</span>
         </div>
 
         <!-- Summary strip (shown after run) -->
@@ -786,13 +786,28 @@ function f1Badge(f1) {
 function runEvaluation() {
     const errEl=document.getElementById('evalError');
     errEl.style.display='none';
-    let yTrue,yPred;
-    try {
-        yTrue=parseLabels(document.getElementById('yTrue').value);
-        yPred=parseLabels(document.getElementById('yPred').value);
-    } catch(e) { errEl.textContent=e.message; errEl.style.display='inline'; return; }
-    if (!yTrue.length||!yPred.length) { errEl.textContent='Both y_true and y_pred must contain values.'; errEl.style.display='inline'; return; }
-    if (yTrue.length!==yPred.length) { errEl.textContent=`Length mismatch: y_true has ${yTrue.length} values, y_pred has ${yPred.length}.`; errEl.style.display='inline'; return; }
+
+    const emails=getEmailAnalysisResults();
+    if (!emails.length) {
+        errEl.textContent='No emails have been evaluated yet. Please run email analysis first.';
+        errEl.style.display='inline';
+        return;
+    }
+
+    const yPred=emails.map(e=>{
+        const cat=normalizeCategory(e);
+        return (cat==='PHISHING'||cat==='POTENTIAL_PHISHING')?1:0;
+    });
+    const yTrue=emails.map((e,i)=>{
+        const actual=normalizeActualLabel(e.Actual_Label);
+        if (actual==='PHISHING') return 1;
+        if (actual==='SAFE') return 0;
+        return yPred[i];
+    });
+
+    document.getElementById('yTrue').value=yTrue.join(',');
+    document.getElementById('yPred').value=yPred.join(',');
+
     const batchSize=Math.max(1,parseInt(document.getElementById('batchSize').value)||20);
     const batches=evaluateInBatches(yTrue,yPred,batchSize);
     renderEvalTable(batches);

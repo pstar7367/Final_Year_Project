@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Email Filtering</title>
-<script>if (!sessionStorage.getItem('secureTraceUserId')) { window.location.replace('index.html'); }</script>
 
 <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -274,7 +273,7 @@ body {
 
     <div class="header">
         <h2>Email Filtering</h2>
-        <div>Welcome, Analyst 👤</div>
+        <div>Welcome, <span id="userGreeting">Analyst</span> 👤</div>
     </div>
 
     <div class="title">
@@ -366,19 +365,18 @@ body {
 <script>
 lucide.createIcons();
 
-/* ================= ACTIVITY LOGGER — user-keyed ================= */
-function getSessionUserId() {
-    return sessionStorage.getItem('secureTraceUserId') || 'guest';
-}
-function getActivityLogKey() {
-    return 'activityLogs_' + getSessionUserId();
-}
+/* ================= ACTIVITY LOGGER ================= */
 function logActivity(message) {
-    const key = getActivityLogKey();
-    const logs = JSON.parse(localStorage.getItem(key)) || [];
-    logs.unshift({ message, time: new Date().toLocaleString() });
+    const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
+
+    logs.unshift({
+        message: message,
+        time: new Date().toLocaleString()
+    });
+
     if (logs.length > 100) logs.pop();
-    localStorage.setItem(key, JSON.stringify(logs));
+
+    localStorage.setItem("activityLogs", JSON.stringify(logs));
 }
 
 function initActivityTracking() {
@@ -502,6 +500,9 @@ function connectGmail() {
 
 /* ================= PAGE LOAD ================= */
 window.onload = function () {
+    const uid=sessionStorage.getItem('secureTraceUserId');
+    const greet=document.getElementById('userGreeting');
+    if (greet&&uid) greet.textContent=uid;
     initActivityTracking();
     logActivity("Visited Email Filtering page");
 };
