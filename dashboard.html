@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SecureTrace Dashboard</title>
-<script>if (!sessionStorage.getItem('secureTraceUserId')) { window.location.replace('index.html'); }</script>
 
 <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -206,7 +205,7 @@ body {
 
     <div class="header">
         <h1>Welcome to SecureTrace Dashboard</h1>
-        <div>Welcome, Analyst 👤</div>
+        <div>Welcome, <span id="userGreeting">Analyst</span> 👤</div>
     </div>
 
     <!-- CARDS -->
@@ -519,19 +518,18 @@ function openTransaction() {
     window.location.href = "https://your-transaction-tool-link.com";
 }
 
-// 🧠 GLOBAL ACTIVITY LOGGER — user-keyed
-function getSessionUserId() {
-    return sessionStorage.getItem('secureTraceUserId') || 'guest';
-}
-function getActivityLogKey() {
-    return 'activityLogs_' + getSessionUserId();
-}
+// 🧠 GLOBAL ACTIVITY LOGGER
 function logActivity(message) {
-    const key = getActivityLogKey();
-    const logs = JSON.parse(localStorage.getItem(key)) || [];
-    logs.unshift({ message, time: new Date().toLocaleString() });
+    const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
+
+    logs.unshift({
+        message: message,
+        time: new Date().toLocaleString()
+    });
+
     if (logs.length > 100) logs.pop();
-    localStorage.setItem(key, JSON.stringify(logs));
+
+    localStorage.setItem("activityLogs", JSON.stringify(logs));
 }
 
 function initActivityTracking() {
@@ -550,12 +548,14 @@ function initActivityTracking() {
 }
 
 window.onload = function () {
+    const uid=localStorage.getItem('secureTraceUserId')||sessionStorage.getItem('secureTraceUserId');
+    const greet=document.getElementById('userGreeting');
+    if (greet&&uid) greet.textContent=uid;
     initActivityTracking();
     resetProjectCountsOnce();
     initStats();
     updateUI();
     loadDashboardResults();
-
     logActivity("Visited dashboard");
 };
 </script>
