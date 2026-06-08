@@ -1,4 +1,4 @@
-﻿﻿<!DOCTYPE html>
+﻿﻿﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -356,12 +356,32 @@ function getActualLabels() {
     try {
         const stored = localStorage.getItem("actualEmailLabels");
         const parsed = JSON.parse(stored) || {};
-        console.log('[GET] actualEmailLabels retrieved:', parsed);
-        return parsed;
+        const normalized = normalizeLabelMap(parsed);
+        console.log('[GET] actualEmailLabels retrieved:', normalized);
+        return normalized;
     } catch (err) {
         console.error('[GET] Error parsing actualEmailLabels:', err);
         return {};
     }
+}
+function normalizeEmailKey(parts) {
+    return parts.map(p => String(p || '').trim().toLowerCase()).join('|');
+}
+function normalizeLabelKey(key) {
+    const value = String(key || '').trim().toLowerCase();
+    if (!value) return '';
+    if (value.includes('|')) return value.replace(/\s*\|\s*/g, '|');
+    const match = value.match(/^(.*)-(.*)-(.*)$/);
+    if (!match) return value;
+    return `${match[1].trim()}|${match[2].trim()}|${match[3].trim()}`;
+}
+function normalizeLabelMap(labels) {
+    const normalized = {};
+    Object.keys(labels || {}).forEach(k => {
+        const normalizedKey = normalizeLabelKey(k);
+        if (normalizedKey) normalized[normalizedKey] = labels[k];
+    });
+    return normalized;
 }
 
 function getAllEmailAnalysisResults() {
@@ -376,9 +396,14 @@ function getAllEmailAnalysisResults() {
 }
 
 function saveActualLabels(labels) {
-    const json = JSON.stringify(labels);
+    const normalized = {};
+    Object.keys(labels || {}).forEach(k => {
+        const normalizedKey = normalizeLabelKey(k);
+        if (normalizedKey) normalized[normalizedKey] = labels[k];
+    });
+    const json = JSON.stringify(normalized);
     localStorage.setItem("actualEmailLabels", json);
-    console.log('[SAVE] actualEmailLabels stored:', labels);
+    console.log('[SAVE] actualEmailLabels stored:', normalized);
     const verify = localStorage.getItem("actualEmailLabels");
     console.log('[SAVE] Verified read back:', verify);
 }
@@ -432,8 +457,9 @@ function updateActualLabel(emailKey, value) {
     console.log('[UPDATE] Normalized value:', normalizedValue);
     const matchedEmail = currentResults.find(email => getEmailKeys(email).includes(emailKey));
     console.log('[UPDATE] Matched email:', !!matchedEmail);
-    const keysToSave = matchedEmail ? getEmailKeys(matchedEmail) : [emailKey];
-    console.log('[UPDATE] Keys to save:', keysToSave);
+    const canonicalKey = matchedEmail ? getEmailKeys(matchedEmail)[0] : emailKey;
+    console.log('[UPDATE] Canonical key to save:', canonicalKey);
+    const keysToSave = [canonicalKey];
 
     if (normalizedValue) {
         keysToSave.forEach(key => {
@@ -513,12 +539,19 @@ function syncReportDataFromResults(results) {
 
     const stats = getStats();
     const labels = getActualLabels();
+    console.log('[SYNC] syncReportDataFromResults: input has',
+        (Array.isArray(results)?results:[]).filter(e=>e.Actual_Label).length,
+        'emails with Actual_Label |',
+        'actualEmailLabels has', Object.keys(labels).length, 'keys');
     const safeResults = (Array.isArray(results) ? results : [])
         .slice(0, 50)
         .map(email => {
             const actualLabel = normalizeActualLabel(email?.Actual_Label || getStoredActualLabel(email, labels));
             return actualLabel ? { ...email, Actual_Label: actualLabel } : email;
         });
+    console.log('[SYNC] syncReportDataFromResults: output has',
+        safeResults.filter(e=>e.Actual_Label).length,
+        'emails with Actual_Label after merge');
     const phishingCount = safeResults.filter(e => normalizeCategory(e) === "PHISHING").length;
     const potentialCount = safeResults.filter(e => normalizeCategory(e) === "POTENTIAL_PHISHING").length;
     const dailyHistory = {};
@@ -618,35 +651,12 @@ function getEmailKey(email) {
 }
 
 function getEmailKeys(email) {
-    const idKeys = [
-        email?.Message_ID,
-        email?.MessageID,
-        email?.["Message ID"],
-        email?.["Message Id"],
-        email?.messageId,
-        email?.message_id,
-        email?.Thread_ID,
-        email?.ThreadID,
-        email?.["Thread ID"],
-        email?.["Thread Id"],
-        email?.threadId,
-        email?.thread_id,
-        getEmailField(email, ["Message_ID", "Message ID", "Message Id", "messageId", "message_id"]),
-        getEmailField(email, ["Thread_ID", "Thread ID", "Thread Id", "threadId", "thread_id"])
-    ];
-
-    const normalizedIdKeys = [...new Set(idKeys.map(key => String(key || "").trim()).filter(Boolean))];
-    if (normalizedIdKeys.length > 0) {
-        console.log('[KEYS] Found ID keys:', normalizedIdKeys);
-        return normalizedIdKeys;
-    }
-
-    const date = getEmailField(email, ["Date", "Email Date"]) || "unknown-date";
-    const from = getEmailField(email, ["From", "Sender", "Email From"]) || "unknown-sender";
-    const subject = getEmailField(email, ["Subject", "Email Subject"]) || "unknown-subject";
-    const fallbackKey = `${date}|${from}|${subject}`;
-    console.log('[KEYS] Generated fallback key:', fallbackKey);
-    return [fallbackKey];
+    const date = getEmailField(email, ["Date", "Email Date"]) || '';
+    const sender = getEmailField(email, ["From", "Sender", "Email From"]) || '';
+    const subject = getEmailField(email, ["Subject", "Email Subject"]) || '';
+    const canonical = normalizeEmailKey([date, sender, subject]);
+    console.log('[KEY] getEmailKeys generated canonical key:', canonical);
+    return [canonical];
 }
 
 function extractEmailResults(response) {
@@ -789,6 +799,11 @@ function loadCachedOrTestData() {
         console.log('[CACHE] Found', cached.length, 'cached records, using them');
         // Simulate that we received this data
         currentResults = cached.slice(0, 50);
+        // Merge stored actual labels so user-set labels survive page refresh
+        currentResults = mergeStoredActualLabelsIntoResults(currentResults);
+        console.log('[CACHE] After label merge — with Actual_Label:',
+            currentResults.filter(e => e.Actual_Label).length,
+            '| without:', currentResults.filter(e => !e.Actual_Label).length);
         renderTable(currentResults);
         syncReportDataFromResults(currentResults);
 
@@ -809,7 +824,12 @@ function loadCachedOrTestData() {
 // ✅ HANDLE DATA
 function handleData(data) {
     currentResults = extractEmailResults(data).slice(0, 50);
+    console.log('[HANDLE] Fresh backend data: total emails:', currentResults.length,
+        '| with Actual_Label:', currentResults.filter(e=>e.Actual_Label).length);
     currentResults = mergeStoredActualLabelsIntoResults(currentResults);
+    console.log('[HANDLE] After mergeStoredActualLabelsIntoResults:',
+        currentResults.filter(e=>e.Actual_Label).length, 'emails with Actual_Label |',
+        currentResults.filter(e=>!e.Actual_Label).length, 'without');
     data = currentResults;
     const endTime = Date.now();
     const timingMetrics = computeEmailTimingMetrics(scanStartTime, endTime, currentResults.length, data);
@@ -906,7 +926,6 @@ function renderTable(data) {
 
         const emailKey = getEmailKey(email);
         const actualLabel = getActualLabel(email);
-        console.log('[RENDER] Email key:', emailKey, 'Actual label:', actualLabel);
 
         table.innerHTML += `
         <tr>
@@ -915,7 +934,7 @@ function renderTable(data) {
             <td>${escapeHtml(email.Subject || "-")}</td>
             <td class="${statusClass}">${escapeHtml(email.Category_Label || email.Category || "-")}</td>
             <td>
-                <select class="actual-label-select" data-email-key="${escapeHtml(emailKey)}" onchange="console.log('SELECT CHANGED', this.dataset.emailKey, this.value); updateActualLabel(this.dataset.emailKey, this.value)">
+                <select class="actual-label-select" data-email-key="${escapeHtml(emailKey)}" onchange="updateActualLabel(this.dataset.emailKey, this.value)">
                     <option value="" ${actualLabel === "" ? "selected" : ""}>Unknown</option>
                     <option value="SAFE" ${actualLabel === "SAFE" ? "selected" : ""}>Safe</option>
                     <option value="PHISHING" ${actualLabel === "PHISHING" ? "selected" : ""}>Phishing</option>

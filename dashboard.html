@@ -365,17 +365,33 @@ function normalizeActualLabel(value) {
     return '';
 }
 
+function normalizeEmailKey(parts) {
+    return parts.map(p => String(p || '').trim().toLowerCase()).join('|');
+}
+function normalizeLabelKey(key) {
+    const value = String(key || '').trim().toLowerCase();
+    if (!value) return '';
+    if (value.includes('|')) return value.replace(/\s*\|\s*/g, '|');
+    const match = value.match(/^(.*)-(.*)-(.*)$/);
+    if (!match) return value;
+    return `${match[1].trim()}|${match[2].trim()}|${match[3].trim()}`;
+}
+function normalizeLabelMap(labels) {
+    const normalized = {};
+    Object.keys(labels || {}).forEach(k => {
+        const normalizedKey = normalizeLabelKey(k);
+        if (normalizedKey) normalized[normalizedKey] = labels[k];
+    });
+    return normalized;
+}
+
 function getEmailKeys(email) {
-    const idKeys = [
-        getEmailField(email, ["Message_ID", "Message ID", "Message Id", "messageId", "message_id"]),
-        getEmailField(email, ["Thread_ID", "Thread ID", "Thread Id", "threadId", "thread_id"])
-    ];
-
-    const normalizedIdKeys = [...new Set(idKeys.map(key => String(key || "").trim()).filter(Boolean))];
-    if (normalizedIdKeys.length > 0) return normalizedIdKeys;
-
-    const fallbackKey = `${getEmailField(email, ["Date", "Email Date"]) || ""}-${getEmailField(email, ["From", "Sender", "Email From"]) || ""}-${getEmailField(email, ["Subject", "Email Subject"]) || ""}`.trim();
-    return fallbackKey.replace(/-/g, "") ? [fallbackKey] : [];
+    const date = getEmailField(email, ["Date", "Email Date"]) || '';
+    const sender = getEmailField(email, ["From", "Sender", "Email From"]) || '';
+    const subject = getEmailField(email, ["Subject", "Email Subject"]) || '';
+    const canonical = normalizeEmailKey([date, sender, subject]);
+    console.log('[KEY] getEmailKeys generated canonical key:', canonical);
+    return [canonical];
 }
 
 function extractEmailResults(response) {
@@ -443,7 +459,7 @@ function handleDashboardResults(data) {
 }
 
 function mergeActualLabelsIntoResults(results) {
-    const storedLabels = JSON.parse(localStorage.getItem('actualEmailLabels')) || {};
+    const storedLabels = normalizeLabelMap(JSON.parse(localStorage.getItem('actualEmailLabels')) || {});
     const cachedResults = JSON.parse(localStorage.getItem('emailAnalysisResults')) || [];
 
     return (Array.isArray(results) ? results : []).map(email => {
