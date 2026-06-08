@@ -1,4 +1,4 @@
-﻿﻿﻿<!DOCTYPE html>
+﻿﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -649,12 +649,11 @@ function getEmailKey(email) {
 }
 
 function getEmailKeys(email) {
-    const date = getEmailField(email, ["Date", "Email Date"]) || '';
-    const sender = getEmailField(email, ["From", "Sender", "Email From"]) || '';
+    const date    = getEmailField(email, ["Date", "Email Date"]) || '';
+    const sender  = getEmailField(email, ["From", "Sender", "Email From"]) || '';
     const subject = getEmailField(email, ["Subject", "Email Subject"]) || '';
-    const threadId = getEmailField(email, ["Thread_ID", "Thread ID", "ThreadId", "Thread"]) || '';
-    const messageId = getEmailField(email, ["Message_ID", "Message ID", "MessageId", "Message"]) || '';
-    const canonical = normalizeEmailKey([date, sender, subject, threadId, messageId]);
+    // Use only date|sender|subject so the key is stable and consistent with reports.html
+    const canonical = normalizeEmailKey([date, sender, subject]);
     console.log('[KEY] getEmailKeys generated canonical key:', canonical);
     return [canonical];
 }
@@ -1008,7 +1007,9 @@ function showError(message) {
 
 // 🌐 GO TO LIVE REPORTS
 function persistCurrentLabels() {
-    const labels = getActualLabels();
+    // Rebuild the label map fresh from every email in currentResults that has a label.
+    // Starting from scratch (not merging) ensures no stale or mismatched keys survive.
+    const labels = {};
 
     if (Array.isArray(currentResults) && currentResults.length) {
         currentResults.forEach(email => {
@@ -1021,6 +1022,7 @@ function persistCurrentLabels() {
     }
 
     saveActualLabels(labels);
+    console.log('[PERSIST] persistCurrentLabels wrote', Object.keys(labels).length, 'labeled entries to actualEmailLabels');
 
     if (Array.isArray(currentResults) && currentResults.length) {
         currentResults = mergeStoredActualLabelsIntoResults(currentResults);

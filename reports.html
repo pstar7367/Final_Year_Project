@@ -521,12 +521,11 @@ function getEmailField(email, names) {
     return '';
 }
 function getEmailKeys(email) {
-    const date = getEmailField(email, ['Date', 'Email Date']) || '';
-    const sender = getEmailField(email, ['From', 'Sender', 'Email From']) || '';
+    const date    = getEmailField(email, ['Date', 'Email Date']) || '';
+    const sender  = getEmailField(email, ['From', 'Sender', 'Email From']) || '';
     const subject = getEmailField(email, ['Subject', 'Email Subject']) || '';
-    const threadId = getEmailField(email, ['Thread_ID', 'Thread ID', 'ThreadId', 'Thread']) || '';
-    const messageId = getEmailField(email, ['Message_ID', 'Message ID', 'MessageId', 'Message']) || '';
-    const canonical = normalizeEmailKey([date, sender, subject, threadId, messageId]);
+    // Use only date|sender|subject so the key is stable and consistent with email-results.html
+    const canonical = normalizeEmailKey([date, sender, subject]);
     console.log(`[KEY] getEmailKeys generated canonical key: "${canonical}"`);
     return [canonical];
 }
@@ -940,7 +939,7 @@ function renderEvalTable(batches) {
         console.assert(totN===batches.reduce((s,b)=>s+b.labeledSamples,0),
             `[EVAL] Footer: overall labeled N=${totN} ≠ sum of labeledSamples`);
         foot.innerHTML=`<tr>
-            <td colspan="3">Overall (${batches.length} batches, LabeledN=${totN})</td>
+            <td colspan="3">Overall (${batches.length} batches, N=${totN})</td>
             <td>${totTP}</td><td>${totFP}</td><td>${totTN}</td><td>${totFN}</td>
             <td>${(overallAcc*100).toFixed(1)}%</td>
             <td>${(avgP*100).toFixed(1)}%</td>
