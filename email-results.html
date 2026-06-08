@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿<!DOCTYPE html>
+﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -184,10 +184,22 @@ tr {
 <body>
 
 <div class="header">
-    <h2>
-        <i data-lucide="bar-chart-3"></i>
-        Email Scan Results (<span id="totalCount">0</span>)
-    </h2>
+    <div>
+        <h2>
+            <i data-lucide="bar-chart-3"></i>
+            Email Scan Results (<span id="totalCount">0</span>)
+        </h2>
+        <div id="labelCounter" style="margin-top:6px;font-size:13px;color:#555;display:none;">
+            <span id="labelCountLabeled" style="color:#2b6cff;font-weight:700;">0</span>
+            / <span id="labelCountTotal">0</span> emails labeled for evaluation
+            &nbsp;·&nbsp;
+            <span id="labelCountPhishing" style="color:#ff4d4f;font-weight:600;">0</span> phishing
+            &nbsp;·&nbsp;
+            <span id="labelCountSafe" style="color:#52c41a;font-weight:600;">0</span> safe
+            &nbsp;·&nbsp;
+            <span id="labelCountUnknown" style="color:#aaa;">0</span> unknown
+        </div>
+    </div>
 
     <div class="header-actions">
         <div class="sort-container">
@@ -449,31 +461,28 @@ function mergeStoredActualLabelsIntoResults(results) {
 }
 
 function updateActualLabel(emailKey, value) {
-    console.log('[UPDATE] Called with emailKey:', emailKey, 'value:', value);
-    const labels = getActualLabels();
+    const labels        = getActualLabels();
     const normalizedValue = normalizeActualLabel(value);
-    console.log('[UPDATE] Normalized value:', normalizedValue);
-    const matchedEmail = currentResults.find(email => getEmailKeys(email).includes(emailKey));
-    console.log('[UPDATE] Matched email:', !!matchedEmail);
-    const canonicalKey = matchedEmail ? getEmailKeys(matchedEmail)[0] : emailKey;
-    console.log('[UPDATE] Canonical key to save:', canonicalKey);
-    const keysToSave = [canonicalKey];
+    const matchedEmail  = currentResults.find(email => getEmailKeys(email).includes(emailKey));
+
+    /* Save under EVERY key for this email (msgid + canonical) so any
+       lookup path finds it, even if key format changes on next load. */
+    const keysToSave = matchedEmail ? getEmailKeys(matchedEmail) : [emailKey];
 
     if (normalizedValue) {
-        keysToSave.forEach(key => {
-            labels[key] = normalizedValue;
-        });
+        keysToSave.forEach(key => { labels[key] = normalizedValue; });
     } else {
-        keysToSave.forEach(key => {
-            delete labels[key];
-        });
+        keysToSave.forEach(key => { delete labels[key]; });
     }
 
-    console.log('[UPDATE] Final labels:', labels);
+    console.log('[UPDATE] emailKey:', emailKey, '→', normalizedValue,
+        '| stored under keys:', keysToSave);
+
     saveActualLabels(labels);
     updateCachedActualLabel(emailKey, normalizedValue);
     localStorage.setItem('emailAnalysisResults', JSON.stringify(currentResults));
     renderTable(currentResults);
+    updateLabelCounter();
     logActivity("Updated actual email label");
 }
 
@@ -533,53 +542,59 @@ function updateScanStats(emailCount, phishingCount, potentialCount) {
 }
 
 function syncReportDataFromResults(results) {
+    /* FIX 5: do NOT slice emailAnalysisResults to MAX_EMAILS_TO_SHOW before
+       saving. The old .slice(0, 50) permanently discarded any labels attached
+       to emails beyond index 49. Now we save the full array so the ML
+       Evaluator in reports.html can see every labeled email. The 50-item cap
+       is kept only for stats counters and the recentAnalysis display list. */
     initStats();
 
-    const stats = getStats();
+    const stats  = getStats();
     const labels = getActualLabels();
-    console.log('[SYNC] syncReportDataFromResults: input has',
-        (Array.isArray(results)?results:[]).filter(e=>e.Actual_Label).length,
-        'emails with Actual_Label |',
-        'actualEmailLabels has', Object.keys(labels).length, 'keys');
-    const safeResults = (Array.isArray(results) ? results : [])
-        .slice(0, MAX_EMAILS_TO_SHOW)
-        .map(email => {
-            const actualLabel = normalizeActualLabel(email?.Actual_Label || getStoredActualLabel(email, labels));
-            return actualLabel ? { ...email, Actual_Label: actualLabel } : email;
-        });
-    console.log('[SYNC] syncReportDataFromResults: output has',
-        safeResults.filter(e=>e.Actual_Label).length,
-        'emails with Actual_Label after merge');
-    const phishingCount = safeResults.filter(e => normalizeCategory(e) === "PHISHING").length;
-    const potentialCount = safeResults.filter(e => normalizeCategory(e) === "POTENTIAL_PHISHING").length;
-    const dailyHistory = {};
 
-    safeResults.forEach(email => {
+    /* Merge stored actual labels into every record — no size cap on the save */
+    const allResults = (Array.isArray(results) ? results : []).map(email => {
+        const actualLabel = normalizeActualLabel(email?.Actual_Label || getStoredActualLabel(email, labels));
+        return actualLabel ? { ...email, Actual_Label: actualLabel } : email;
+    });
+
+    console.log('[SYNC] syncReportDataFromResults: total=', allResults.length,
+        '| with Actual_Label:', allResults.filter(e=>e.Actual_Label).length,
+        '| actualEmailLabels keys:', Object.keys(labels).length);
+
+    /* Save the FULL uncapped array so the evaluator sees everything */
+    localStorage.setItem('emailAnalysisResults', JSON.stringify(allResults));
+
+    /* Stats and charts only need a representative slice */
+    const statsSlice    = allResults.slice(0, MAX_EMAILS_TO_SHOW);
+    const phishingCount  = statsSlice.filter(e => normalizeCategory(e) === "PHISHING").length;
+    const potentialCount = statsSlice.filter(e => normalizeCategory(e) === "POTENTIAL_PHISHING").length;
+    const dailyHistory   = {};
+    statsSlice.forEach(email => {
         const key = getEmailDateKey(email);
         if (!key) return;
         dailyHistory[key] = (dailyHistory[key] || 0) + 1;
     });
 
-    stats.emails = safeResults.length;
-    stats.phishing = phishingCount;
-    stats.potential = potentialCount;
-    stats.alerts = phishingCount + potentialCount;
+    stats.emails     = statsSlice.length;
+    stats.phishing   = phishingCount;
+    stats.potential  = potentialCount;
+    stats.alerts     = phishingCount + potentialCount;
     stats.dailyHistory = dailyHistory;
-    localStorage.setItem('emailAnalysisResults', JSON.stringify(safeResults));
     setStats(stats);
 
-    const recentRecords = [...safeResults]
+    const recentRecords = [...allResults]
         .sort((a, b) => getEmailTime(b) - getEmailTime(a))
         .slice(0, 10)
         .map(email => ({
-            date: email.Date || "-",
-            sender: email.From || "-",
+            date  : email.Date   || "-",
+            sender: email.From   || "-",
             subject: email.Subject || "-",
             status: getEmailStatusLabel(email)
         }));
 
     saveRecentAnalysis(recentRecords);
-    logActivity(`Synced report data from ${safeResults.length} email results`);
+    logActivity(`Synced report data from ${allResults.length} email results`);
 }
 
 function getEmailField(email, names) {
@@ -643,19 +658,46 @@ function getEmailStatusLabel(email) {
 }
 
 function getEmailKey(email) {
-    const keys = getEmailKeys(email);
-    console.log('[KEY] getEmailKey result for email:', keys[0], 'All keys:', keys);
-    return keys[0];
+    return getEmailKeys(email)[0];
 }
 
+/* ── ROBUST KEY GENERATION ──────────────────────────────────────────
+   ROOT CAUSE FIX: The old key used date|sender|subject.
+   Gmail's Date field is a full RFC 2822 string ("Mon, 12 Jan 2025
+   10:23:44 +0000 (UTC)"). Any whitespace/timezone difference between
+   loads silently broke the match — causing user-set labels to
+   disappear on refresh (the "only 4 labels" bug).
+
+   Fix: Message_ID is used as the PRIMARY key. It is a globally unique
+   mail identifier that never changes format. The date|sender|subject
+   canonical key is kept as a FALLBACK for backward compatibility with
+   labels already stored in the old format.
+
+   When a user sets a label, it is saved under EVERY available key so
+   both old and new lookup paths find it.
+─────────────────────────────────────────────────────────────────── */
 function getEmailKeys(email) {
+    const messageId = String(
+        getEmailField(email, ['Message_ID', 'Message ID', 'MessageId', 'msgId', 'message_id']) || ''
+    ).trim();
+
     const date    = getEmailField(email, ["Date", "Email Date"]) || '';
     const sender  = getEmailField(email, ["From", "Sender", "Email From"]) || '';
     const subject = getEmailField(email, ["Subject", "Email Subject"]) || '';
-    // Use only date|sender|subject so the key is stable and consistent with reports.html
+
+    const keys = [];
+
+    /* Primary: Message_ID — stable, globally unique */
+    if (messageId) keys.push('msgid:' + messageId.toLowerCase());
+
+    /* Fallback: date|sender|subject — backward compat with stored labels */
     const canonical = normalizeEmailKey([date, sender, subject]);
-    console.log('[KEY] getEmailKeys generated canonical key:', canonical);
-    return [canonical];
+    if (canonical.replace(/\|/g, '').trim()) keys.push(canonical);
+
+    /* Always return at least one key */
+    if (keys.length === 0) keys.push(canonical);
+
+    return keys;
 }
 
 function extractEmailResults(response) {
@@ -791,22 +833,58 @@ function loadResults() {
     document.body.appendChild(script);
 }
 
+/* ── Strips any Actual_Label that came from the backend (not from the
+   user). Labels must come ONLY from the actualEmailLabels store so the
+   baseline is always "Unknown" unless the user explicitly selected one. */
+function applyOnlyUserLabels(emails) {
+    const userLabels = getActualLabels();
+    return (Array.isArray(emails) ? emails : []).map(email => {
+        const userLabel = normalizeActualLabel(getStoredActualLabel(email, userLabels));
+        if (userLabel) return { ...email, Actual_Label: userLabel };
+        /* Not in user-set store → clear any backend-provided Actual_Label */
+        const e = { ...email };
+        delete e.Actual_Label;
+        return e;
+    });
+}
+
+/* ── Live label counter shown in the page header ── */
+function updateLabelCounter() {
+    const counter = document.getElementById('labelCounter');
+    if (!counter || !currentResults.length) return;
+
+    const total    = currentResults.length;
+    const phishing = currentResults.filter(e => normalizeActualLabel(e.Actual_Label) === 'PHISHING').length;
+    const safe     = currentResults.filter(e => normalizeActualLabel(e.Actual_Label) === 'SAFE').length;
+    const labeled  = phishing + safe;
+    const unknown  = total - labeled;
+
+    const el = id => document.getElementById(id);
+    if (el('labelCountLabeled')) el('labelCountLabeled').textContent = labeled;
+    if (el('labelCountTotal'))   el('labelCountTotal').textContent   = total;
+    if (el('labelCountPhishing'))el('labelCountPhishing').textContent= phishing;
+    if (el('labelCountSafe'))    el('labelCountSafe').textContent    = safe;
+    if (el('labelCountUnknown')) el('labelCountUnknown').textContent = unknown;
+
+    counter.style.display = 'block';
+    console.log(`[LABELS] ${labeled}/${total} labeled | ${phishing} phishing | ${safe} safe | ${unknown} unknown`);
+}
+
 function loadCachedOrTestData() {
     console.log('[CACHE] Checking for cached email results...');
     const cached = getAllEmailAnalysisResults();
     if (cached && cached.length > 0) {
-        console.log('[CACHE] Found', cached.length, 'cached records, using them');
-        // Simulate that we received this data
+        console.log('[CACHE] Found', cached.length, 'cached records');
         currentResults = cached.slice(0, MAX_EMAILS_TO_SHOW);
-        // Merge stored actual labels so user-set labels survive page refresh
-        currentResults = mergeStoredActualLabelsIntoResults(currentResults);
-        console.log('[CACHE] After label merge — with Actual_Label:',
+        /* Apply ONLY user-set labels — strips any backend Actual_Label */
+        currentResults = applyOnlyUserLabels(currentResults);
+        console.log('[CACHE] After applyOnlyUserLabels — labeled:',
             currentResults.filter(e => e.Actual_Label).length,
-            '| without:', currentResults.filter(e => !e.Actual_Label).length);
+            '| unlabeled:', currentResults.filter(e => !e.Actual_Label).length);
         renderTable(currentResults);
+        updateLabelCounter();
         syncReportDataFromResults(currentResults);
 
-        // Keep a cached timing value so reports can show values if scan data is unavailable
         const now = new Date();
         saveEmailSessionTiming(computeEmailTimingMetrics(now.getTime() - 2000, now.getTime(), currentResults.length, {}));
         logActivity(`Loaded ${currentResults.length} cached emails (live data unavailable)`);
@@ -822,13 +900,14 @@ function loadCachedOrTestData() {
 
 // ✅ HANDLE DATA
 function handleData(data) {
-    currentResults = extractEmailResults(data).slice(0, MAX_EMAILS_TO_SHOW);
-    console.log('[HANDLE] Fresh backend data: total emails:', currentResults.length,
-        '| with Actual_Label:', currentResults.filter(e=>e.Actual_Label).length);
-    currentResults = mergeStoredActualLabelsIntoResults(currentResults);
-    console.log('[HANDLE] After mergeStoredActualLabelsIntoResults:',
-        currentResults.filter(e=>e.Actual_Label).length, 'emails with Actual_Label |',
-        currentResults.filter(e=>!e.Actual_Label).length, 'without');
+    const raw = extractEmailResults(data).slice(0, MAX_EMAILS_TO_SHOW);
+    console.log('[HANDLE] Fresh backend data: total:', raw.length,
+        '| backend Actual_Label count (stripped):', raw.filter(e=>e.Actual_Label).length);
+    /* Strip any Actual_Label from backend — user is the only source of truth */
+    currentResults = applyOnlyUserLabels(raw);
+    console.log('[HANDLE] After applyOnlyUserLabels:',
+        currentResults.filter(e=>e.Actual_Label).length, 'user-labeled |',
+        currentResults.filter(e=>!e.Actual_Label).length, 'unknown');
     data = currentResults;
     const endTime = Date.now();
     const timingMetrics = computeEmailTimingMetrics(scanStartTime, endTime, currentResults.length, data);
@@ -866,7 +945,7 @@ function handleData(data) {
     }
 
     applySorting();
-    // Always keep header counter consistent with what we rendered
+    updateLabelCounter();
     setTotalCount();
 
     lucide.createIcons();
@@ -1047,6 +1126,10 @@ initActivityTracking();
 logActivity("Visited email results page");
 resetProjectCountsOnce();
 loadResults();
+
+/* Auto-persist labels whenever the user leaves the page — even if they
+   navigate directly instead of using the "Go to Reports" button. */
+window.addEventListener('beforeunload', persistCurrentLabels);
 </script>
 
 </body>
