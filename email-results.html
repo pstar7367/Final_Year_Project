@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
+﻿﻿﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -552,10 +552,14 @@ function syncReportDataFromResults(results) {
     const stats  = getStats();
     const labels = getActualLabels();
 
-    /* Merge stored actual labels into every record — no size cap on the save */
+    /* Merge stored actual labels into every record — no size cap on the save.
+       Stamp _category at save-time so reports.html always has a reliable
+       prediction value regardless of field-name differences. */
     const allResults = (Array.isArray(results) ? results : []).map(email => {
         const actualLabel = normalizeActualLabel(email?.Actual_Label || getStoredActualLabel(email, labels));
-        return actualLabel ? { ...email, Actual_Label: actualLabel } : email;
+        const _category   = normalizeCategory(email);
+        const enriched    = { ...email, _category };
+        return actualLabel ? { ...enriched, Actual_Label: actualLabel } : enriched;
     });
 
     console.log('[SYNC] syncReportDataFromResults: total=', allResults.length,
@@ -1111,6 +1115,10 @@ function persistCurrentLabels() {
 
 function goReports() {
     persistCurrentLabels();
+    const labeled = currentResults.filter(e => normalizeActualLabel(e.Actual_Label) !== '');
+    if (labeled.length > 0) {
+        localStorage.setItem('autoRunEval', '1');
+    }
     logActivity("Navigated to reports page");
     window.open("reports.html", "_top");
 }

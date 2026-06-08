@@ -560,6 +560,9 @@ function applyStoredActualLabel(email) {
     return label ? {...email, Actual_Label: label} : email;
 }
 function normalizeCategory(record) {
+    /* Prefer the category stamped at save-time by email-results.html —
+       avoids field-name guessing and guarantees the same value the user saw. */
+    if (record && record._category) return record._category;
     const label = String(getEmailField(record,['Category_Label','Category Label','Prediction_Label','Prediction Label','Label','Status'])||'').toLowerCase();
     const cat   = String(getEmailField(record,['Category','Prediction','Predicted_Label','Predicted Label','Predicted','Result'])||'').toUpperCase();
     const risk  = String(getEmailField(record,['Risk','Risk_Level','Risk Level','Threat'])||'').toLowerCase();
@@ -941,6 +944,10 @@ function runEvaluation() {
     errEl.style.display = 'none';
     errEl.textContent   = '';
 
+    /* Remove any leftover debug panel from a previous run */
+    const oldPanel = document.getElementById('evalDebugPanel');
+    if (oldPanel) oldPanel.remove();
+
     /* Read the FULL uncapped array from storage */
     const rawResults = JSON.parse(localStorage.getItem('emailAnalysisResults') || '[]');
     if (!Array.isArray(rawResults) || rawResults.length === 0) {
@@ -949,65 +956,34 @@ function runEvaluation() {
         return;
     }
 
-    /* ── Labels come from user selections on the Email Results page only.
-       Two reliable sources (both reflect user actions):
-         1. actualEmailLabels key-value store — written by saveActualLabels()
-            every time a user picks a dropdown value.
-         2. Actual_Label embedded in emailAnalysisResults — written by
-            updateCachedActualLabel() for the same user action.
-            Sheet-origin Actual_Label values are stripped by applyOnlyUserLabels()
-            when emails load in email-results.html, so anything still in there
-            was set by the user.
-       We try source 1 first; if the key lookup misses (e.g. Message_ID absent),
-       source 2 is the safe fallback — DO NOT delete it on a key-miss. ── */
+    /* Only use labels explicitly set by the user on the Email Results page.
+       The actualEmailLabels store is written solely by user dropdown actions —
+       any Actual_Label that arrived from the spreadsheet is never stored here. */
     const userLabels = getActualLabels();
 
     const allEmails = rawResults.map(email => {
-        /* Source 1: key-value store */
         const storedLabel = normalizeActualLabel(getStoredActualLabel(email, userLabels));
         if (storedLabel) return { ...email, Actual_Label: storedLabel };
-
-        /* Source 2: label already embedded in the record by updateCachedActualLabel */
-        const embeddedLabel = normalizeActualLabel(email.Actual_Label);
-        if (embeddedLabel) return { ...email, Actual_Label: embeddedLabel };
-
-        /* Truly unlabeled — clear any stale/backend value */
+        /* Not in user store — discard any embedded value (could be sheet-origin) */
         const e = { ...email };
         delete e.Actual_Label;
         return e;
     });
 
-    /* ── Pipeline diagnostics ── */
-    const totalEmails       = allEmails.length;
-    const labeledEmails     = allEmails.filter(e => normalizeActualLabel(e.Actual_Label) !== '');
-    const unlabeledEmails   = allEmails.filter(e => !normalizeActualLabel(e.Actual_Label));
-    const predictedPhishing = allEmails.filter(e => normalizeCategory(e) !== 'SAFE');
-    const predictedSafe     = allEmails.filter(e => normalizeCategory(e) === 'SAFE');
-    const actualPhishing    = labeledEmails.filter(e => normalizeActualLabel(e.Actual_Label) === 'PHISHING');
-    const actualSafe        = labeledEmails.filter(e => normalizeActualLabel(e.Actual_Label) === 'SAFE');
-
-    console.group('[EVAL] runEvaluation — pipeline diagnostics');
-    console.log(`Total emails loaded         : ${totalEmails}`);
-    console.log(`Total labeled (user-set)    : ${labeledEmails.length}`);
-    console.log(`Total unlabeled             : ${unlabeledEmails.length}`);
-    console.log(`Predicted PHISHING/POTENTIAL: ${predictedPhishing.length}`);
-    console.log(`Predicted SAFE              : ${predictedSafe.length}`);
-    console.log(`Actual PHISHING             : ${actualPhishing.length}`);
-    console.log(`Actual SAFE                 : ${actualSafe.length}`);
-    labeledEmails.forEach((e, i) =>
-        console.log(`  [${i+1}] key=${getEmailKeys(e)[0]} label=${e.Actual_Label} pred=${normalizeCategory(e)}`)
-    );
-    console.groupEnd();
+    const totalEmails    = allEmails.length;
+    const labeledEmails  = allEmails.filter(e => normalizeActualLabel(e.Actual_Label) !== '');
+    const actualPhishing = labeledEmails.filter(e => normalizeActualLabel(e.Actual_Label) === 'PHISHING');
+    const actualSafe     = labeledEmails.filter(e => normalizeActualLabel(e.Actual_Label) === 'SAFE');
 
     if (labeledEmails.length === 0) {
-        if (noteEl) noteEl.textContent =
-            `${totalEmails} emails loaded | 0 labeled — go to Email Results and assign Actual Labels first.`;
-        errEl.textContent   = 'No labeled emails found. Assign Actual Label values on the Email Results page first.';
+        if (noteEl) noteEl.innerHTML =
+            `${totalEmails} emails loaded | 0 labeled — go to <a href="email-results.html" style="color:#2b6cff;font-weight:600;text-decoration:underline;">Email Results</a> and assign <strong>Actual Labels</strong> first.`;
+        errEl.innerHTML = 'No labeled emails found. Assign <a href="email-results.html" style="color:#2b6cff;font-weight:600;text-decoration:underline;">Actual Label</a> values on the Email Results page first.';
         errEl.style.display = 'inline';
         return;
     }
 
-    /* Hidden textareas for reference (labeled emails only) */
+    /* Hidden textareas for reference */
     const yTrue = labeledEmails.map(e => normalizeActualLabel(e.Actual_Label) === 'PHISHING' ? 1 : 0);
     const yPred = labeledEmails.map(e => normalizeCategory(e) === 'SAFE' ? 0 : 1);
     document.getElementById('yTrue').value = yTrue.join(',');
@@ -1016,85 +992,18 @@ function runEvaluation() {
     if (noteEl) noteEl.textContent =
         `${totalEmails} emails total | ${labeledEmails.length} labeled` +
         ` (${actualPhishing.length} phishing · ${actualSafe.length} safe) | ` +
-        `${unlabeledEmails.length} unlabeled`;
+        `${totalEmails - labeledEmails.length} unlabeled`;
 
-    /* Batch size — no artificial cap */
+    /* Batch size */
     const rawBatch  = parseInt((document.getElementById('batchSize') || {}).value, 10);
     const batchSize = Math.max(1, isNaN(rawBatch) ? DEFAULT_BATCH_SIZE : rawBatch);
 
     /* Pass ALL emails so positional ranges (1–20, 21–40 …) are preserved */
     const batches = evaluateInBatches(allEmails, batchSize);
 
-    renderEvalDebugPanel({
-        totalEmails,
-        labeled      : labeledEmails.length,
-        unlabeled    : unlabeledEmails.length,
-        predictedPhishing: predictedPhishing.length,
-        predictedSafe: predictedSafe.length,
-        actualPhishing: actualPhishing.length,
-        actualSafe   : actualSafe.length,
-        batchSize, batches
-    });
     renderEvalTable(batches);
     renderEvalSummary(batches);
     renderPerfChart(batches);
-}
-
-/* ── Debug panel rendered above the batch table ── */
-function renderEvalDebugPanel(info) {
-    let panel = document.getElementById('evalDebugPanel');
-    if (!panel) {
-        panel = document.createElement('div');
-        panel.id = 'evalDebugPanel';
-        panel.style.cssText =
-            'background:#f0f6ff;border:1px solid #cfe0ff;border-radius:8px;' +
-            'padding:14px 18px;margin-top:16px;font-size:13px;line-height:1.9;color:#333;';
-        const evalResults = document.getElementById('evalResults');
-        evalResults.parentNode.insertBefore(panel, evalResults);
-    }
-
-    const overallTP = info.batches.reduce((s,b) => s + b.counts.tp, 0);
-    const overallFP = info.batches.reduce((s,b) => s + b.counts.fp, 0);
-    const overallTN = info.batches.reduce((s,b) => s + b.counts.tn, 0);
-    const overallFN = info.batches.reduce((s,b) => s + b.counts.fn, 0);
-    const overallN  = overallTP + overallFP + overallTN + overallFN;
-
-    panel.innerHTML = `
-        <strong style="font-size:14px;color:#2b6cff;">Pipeline Diagnostics</strong>
-        <table style="width:100%;margin-top:8px;border-collapse:collapse;">
-            <tr><td style="width:55%;padding:2px 0;color:#555;">Total emails loaded</td>
-                <td><strong>${info.totalEmails}</strong></td></tr>
-            <tr><td style="color:#555;">Labeled emails used for evaluation</td>
-                <td><strong style="color:#2b6cff;">${info.labeled}</strong></td></tr>
-            <tr><td style="color:#555;">Unlabeled emails (excluded)</td>
-                <td><strong style="color:#aaa;">${info.unlabeled}</strong></td></tr>
-            <tr><td style="color:#555;">Predicted PHISHING / POTENTIAL</td>
-                <td><strong style="color:#ff4d4f;">${info.predictedPhishing}</strong></td></tr>
-            <tr><td style="color:#555;">Predicted SAFE</td>
-                <td><strong style="color:#52c41a;">${info.predictedSafe}</strong></td></tr>
-            <tr><td style="color:#555;">Actual PHISHING (among labeled)</td>
-                <td><strong style="color:#ff4d4f;">${info.actualPhishing}</strong></td></tr>
-            <tr><td style="color:#555;">Actual SAFE (among labeled)</td>
-                <td><strong style="color:#52c41a;">${info.actualSafe}</strong></td></tr>
-            <tr><td style="color:#555;">Batch size</td>
-                <td><strong>${info.batchSize}</strong></td></tr>
-            <tr><td style="color:#555;">Number of batches</td>
-                <td><strong>${info.batches.length}</strong></td></tr>
-            <tr style="border-top:1px solid #cfe0ff;">
-                <td style="color:#555;padding-top:6px;">Overall confusion matrix (N=${overallN})</td>
-                <td style="padding-top:6px;">
-                    <span style="color:#2b6cff;">TP=${overallTP}</span>
-                    <span style="color:#faad14;margin-left:8px;">FP=${overallFP}</span>
-                    <span style="color:#52c41a;margin-left:8px;">TN=${overallTN}</span>
-                    <span style="color:#ff4d4f;margin-left:8px;">FN=${overallFN}</span>
-                </td>
-            </tr>
-            <tr><td colspan="2" style="color:#888;font-size:12px;padding-top:4px;">
-                ✓ N = TP+FP+TN+FN = ${overallN} = labeled emails = ${info.labeled}
-                ${overallN !== info.labeled ? '<span style="color:red;font-weight:bold"> ⚠ MISMATCH — check console</span>' : ''}
-            </td></tr>
-        </table>`;
-    panel.style.display = 'block';
 }
 
 function renderEvalTable(batches) {
@@ -1278,6 +1187,13 @@ window.onload = function () {
     window.addEventListener('focus', () => {
         if (!reportLoading) loadReportResults();
     });
+
+    /* Auto-run evaluation when returning from the Email Results page
+       after the user has assigned Actual Labels. */
+    if (localStorage.getItem('autoRunEval') === '1') {
+        localStorage.removeItem('autoRunEval');
+        setTimeout(runEvaluation, 600);
+    }
 };
 </script>
 
