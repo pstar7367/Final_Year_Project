@@ -862,64 +862,134 @@ function _ensureLabelsAfterSave(savedRecords) {
 }
 
 /* ── evaluateInBatches ──────────────────────────────────────────────
-   Receives ALL emails (labeled + unlabeled) and slices them into
-   positional batches of `batchSize`.
+   Receives ALL emails. Every email is guaranteed to have Actual_Label
+   set by the caller (unlabeled emails get the default 'SAFE' label).
+   Therefore every email lands in exactly one confusion-matrix cell and:
 
-   Batch report column meanings:
-     Samples  = total emails in that range (labeled + unlabeled)
-     TP/FP/TN/FN = counts from ONLY labeled emails within the range
-     Accuracy/Precision/Recall/F1 = computed from TP+FP+TN+FN (labeled N)
+       Samples = TP + FP + TN + FN  (always, by construction)
 
-   Unlabeled emails inside a batch do NOT contribute to any metric —
-   they are counted in Samples but not in the confusion matrix.
-   This matches the requested format:
-     #1  1–20  20  TP  FP  TN  FN  Acc%  Prec%  Rec%  F1%
+   Predictions:
+     PHISHING / POTENTIAL_PHISHING  → positive (1)
+     SAFE                           → negative (0)
+   Formula:
+     Accuracy  = (TP + TN) / (TP + TN + FP + FN)
+     Precision = TP / (TP + FP)
+     Recall    = TP / (TP + FN)
+     F1        = 2 * Precision * Recall / (Precision + Recall)
 ─────────────────────────────────────────────────────────────────── */
 function evaluateInBatches(allEmails, batchSize) {
     const results = [];
-    for (let start = 0; start < allEmails.length; start += batchSize) {
-        const batch = allEmails.slice(start, start + batchSize);
-        let tp = 0, fp = 0, tn = 0, fn = 0;
+    console.group(
+        `[EVAL] evaluateInBatches — ${allEmails.length} emails total` +
+        ` | batchSize=${batchSize}` +
+        ` | batches=${Math.ceil(allEmails.length / batchSize)}`
+    );
 
-        batch.forEach(email => {
-            const actual = normalizeActualLabel(email.Actual_Label);
-            if (actual === '') return;           /* unlabeled — skip */
-            const truth = actual === 'PHISHING' ? 1 : 0;
-            /* POTENTIAL_PHISHING counts as a positive prediction */
-            const pred  = normalizeCategory(email) === 'SAFE' ? 0 : 1;
-            if      (truth === 1 && pred === 1) tp++;
-            else if (truth === 0 && pred === 1) fp++;
-            else if (truth === 0 && pred === 0) tn++;
-            else if (truth === 1 && pred === 0) fn++;
+    for (let start = 0; start < allEmails.length; start += batchSize) {
+        const batch   = allEmails.slice(start, start + batchSize);
+        let tp = 0, fp = 0, tn = 0, fn = 0, skipped = 0;
+
+        batch.forEach((email, idx) => {
+            const globalIdx  = start + idx + 1;
+            const actualLabel = normalizeActualLabel(email.Actual_Label);
+            const predCat    = normalizeCategory(email);
+            const subject    = String(getEmailField(email,['Subject','subject']) || '(no subject)').slice(0, 60);
+
+            /* Failsafe: caller should have defaulted every email to SAFE */
+            if (!actualLabel) {
+                skipped++;
+                console.warn(`  [${globalIdx}] SKIPPED — Actual_Label still missing after defaulting`, email);
+                return;
+            }
+
+            const truth =
+(
+    actualLabel === 'PHISHING' ||
+    actualLabel === 'POTENTIAL_PHISHING'
+)
+? 1
+: 0;
+            const predBin = predCat === 'SAFE' ? 0 : 1;
+
+            let classification;
+            if      (truth === 1 && predBin === 1) { tp++; classification = 'TP'; }
+            else if (truth === 0 && predBin === 1) { fp++; classification = 'FP'; }
+            else if (truth === 0 && predBin === 0) { tn++; classification = 'TN'; }
+            else                                   { fn++; classification = 'FN'; }
+
+            console.log(JSON.stringify({
+                index           : globalIdx,
+                subject,
+                actualLabel,
+                predictedLabel  : predCat,
+                classification
+            }));
         });
 
-        const n         = tp + fp + tn + fn;    /* labeled count in batch */
+        const samples =
+    tp + fp + tn + fn;
+
+if (samples !== batch.length) {
+
+    console.error(
+        'Confusion matrix mismatch',
+        {
+            batchSize : batch.length,
+            tp,
+            fp,
+            tn,
+            fn,
+            samples
+        }
+    );
+}
+
+        const totalCounted = tp + tn + fp + fn;
+        if (totalCounted !== batch.length - skipped) {
+            console.error('Batch count mismatch', {
+                batchSize : batch.length,
+                tp, tn, fp, fn,
+                totalCounted
+            });
+        }
+
+        console.log(
+            `[EVAL] Batch ${results.length + 1}` +
+            ` emails ${start + 1}–${start + batch.length}` +
+            ` | entering=${batch.length} skipped=${skipped}` +
+            ` | TP=${tp} FP=${fp} TN=${tn} FN=${fn}` +
+            ` | TP+FP+TN+FN=${totalCounted}` +
+            ` | Samples=TP+FP+TN+FN: ${totalCounted === batch.length - skipped ? '✓' : '✗ MISMATCH'}`
+        );
+
+        const n         = totalCounted;
         const accuracy  = n > 0 ? (tp + tn) / n : 0;
         const precision = (tp + fp) > 0 ? tp / (tp + fp) : 0;
         const recall    = (tp + fn) > 0 ? tp / (tp + fn) : 0;
         const f1        = (precision + recall) > 0
                           ? 2 * precision * recall / (precision + recall) : 0;
 
-        console.log(
-            `[EVAL] Batch ${results.length + 1}` +
-            ` (${start + 1}–${start + batch.length})` +
-            ` samples=${batch.length} labeled=${n}` +
-            ` TP=${tp} FP=${fp} TN=${tn} FN=${fn}` +
-            ` Acc=${(accuracy*100).toFixed(1)}%` +
-            ` Prec=${(precision*100).toFixed(1)}%` +
-            ` Rec=${(recall*100).toFixed(1)}%` +
-            ` F1=${(f1*100).toFixed(1)}%`
-        );
-
         results.push({
-            batchIndex   : results.length + 1,
-            batchRange   : [start + 1, start + batch.length],
-            samples      : batch.length,        /* ALL emails in range */
-            labeledCount : n,                   /* labeled emails in range */
-            counts       : { tp, fp, tn, fn },
-            metrics      : { accuracy, precision, recall, f1 }
+            batchIndex  : results.length + 1,
+            batchRange  : [start + 1, start + batch.length],
+            samples     : n,         /* = TP+FP+TN+FN */
+            labeledCount: n,
+            counts      : { tp, fp, tn, fn },
+            metrics     : { accuracy, precision, recall, f1 }
         });
     }
+
+    const totTP = results.reduce((s,b) => s + b.counts.tp, 0);
+    const totFP = results.reduce((s,b) => s + b.counts.fp, 0);
+    const totTN = results.reduce((s,b) => s + b.counts.tn, 0);
+    const totFN = results.reduce((s,b) => s + b.counts.fn, 0);
+    console.log(
+        `[EVAL] OVERALL — Total emails=${allEmails.length}` +
+        ` | TP=${totTP} FP=${totFP} TN=${totTN} FN=${totFN}` +
+        ` | sum=${totTP + totFP + totTN + totFN}` +
+        ` | Total=sum: ${totTP + totFP + totTN + totFN === allEmails.length ? '✓' : '✗ MISMATCH'}`
+    );
+    console.groupEnd();
     return results;
 }
 
@@ -949,56 +1019,139 @@ function runEvaluation() {
     if (oldPanel) oldPanel.remove();
 
     /* Read the FULL uncapped array from storage */
-    const rawResults = JSON.parse(localStorage.getItem('emailAnalysisResults') || '[]');
-    if (!Array.isArray(rawResults) || rawResults.length === 0) {
-        errEl.textContent  = 'No email scan results are available yet. Run the Gmail sync to populate report data.';
-        errEl.style.display = 'inline';
-        return;
-    }
+    const rawResults =
+    JSON.parse(localStorage.getItem('emailAnalysisResults') || '[]');
 
-    /* Only use labels explicitly set by the user on the Email Results page.
-       The actualEmailLabels store is written solely by user dropdown actions —
-       any Actual_Label that arrived from the spreadsheet is never stored here. */
-    const userLabels = getActualLabels();
+if (!Array.isArray(rawResults) || rawResults.length === 0) {
+    errEl.textContent =
+        'No email scan results are available yet.';
+    errEl.style.display = 'inline';
+    return;
+}
 
-    const allEmails = rawResults.map(email => {
+/*
+   Priority order:
+
+   1. User-selected Actual_Label
+   2. Dataset Actual_Label
+   3. Backend Actual_Label
+   4. Default SAFE
+*/
+
+const userLabels = getActualLabels();
+
+
+    /* Step 1 — Apply user-set labels; clear any sheet-origin embedded values. */
+    const withUserLabels = rawResults.map(email => {
         const storedLabel = normalizeActualLabel(getStoredActualLabel(email, userLabels));
         if (storedLabel) return { ...email, Actual_Label: storedLabel };
-        /* Not in user store — discard any embedded value (could be sheet-origin) */
         const e = { ...email };
         delete e.Actual_Label;
         return e;
     });
 
-    const totalEmails    = allEmails.length;
-    const labeledEmails  = allEmails.filter(e => normalizeActualLabel(e.Actual_Label) !== '');
-    const actualPhishing = labeledEmails.filter(e => normalizeActualLabel(e.Actual_Label) === 'PHISHING');
-    const actualSafe     = labeledEmails.filter(e => normalizeActualLabel(e.Actual_Label) === 'SAFE');
+    const totalEmails    = withUserLabels.length;
+    const userLabeledArr = withUserLabels.filter(e => normalizeActualLabel(e.Actual_Label) !== '');
+    const actualPhishing = userLabeledArr.filter(e => normalizeActualLabel(e.Actual_Label) === 'PHISHING');
+    const actualSafe     = userLabeledArr.filter(e => normalizeActualLabel(e.Actual_Label) === 'SAFE');
 
-    if (labeledEmails.length === 0) {
+    /* Require at least one user label before evaluating — otherwise metrics
+       would be meaningless (all 50 emails default to SAFE = 0 phishing ground truth). */
+    if (userLabeledArr.length === 0) {
         if (noteEl) noteEl.innerHTML =
-            `${totalEmails} emails loaded | 0 labeled — go to <a href="email-results.html" style="color:#2b6cff;font-weight:600;text-decoration:underline;">Email Results</a> and assign <strong>Actual Labels</strong> first.`;
-        errEl.innerHTML = 'No labeled emails found. Assign <a href="email-results.html" style="color:#2b6cff;font-weight:600;text-decoration:underline;">Actual Label</a> values on the Email Results page first.';
+            `${totalEmails} emails loaded | 0 user-labeled — go to ` +
+            `<a href="email-results.html" style="color:#2b6cff;font-weight:600;text-decoration:underline;">Email Results</a>` +
+            ` and assign <strong>Actual Labels</strong> first.`;
+        errEl.innerHTML =
+            'No labeled emails found. Assign <a href="email-results.html"' +
+            ' style="color:#2b6cff;font-weight:600;text-decoration:underline;">Actual Label</a>' +
+            ' values on the Email Results page first.';
         errEl.style.display = 'inline';
         return;
     }
 
-    /* Hidden textareas for reference */
-    const yTrue = labeledEmails.map(e => normalizeActualLabel(e.Actual_Label) === 'PHISHING' ? 1 : 0);
-    const yPred = labeledEmails.map(e => normalizeCategory(e) === 'SAFE' ? 0 : 1);
+    /* Step 2 — Default every unlabeled email to SAFE.
+       This makes every email evaluable (all must land in TP/FP/TN/FN).
+       Rationale: in phishing detection, "not confirmed phishing" = safe. */
+    const allEmails = rawResults.map(email => {
+
+    let actual = null;
+
+    const keys = getEmailKeys(email);
+
+    for (const key of keys) {
+        if (userLabels[key]) {
+            actual = userLabels[key];
+            break;
+        }
+    }
+
+    if (!actual) {
+        actual =
+            normalizeActualLabel(
+                email.Actual_Label ||
+                email.actual_label ||
+                email.Label ||
+                email.label ||
+                ''
+            );
+    }
+
+    if (!actual) {
+        actual = 'SAFE';
+    }
+
+    return {
+        ...email,
+        Actual_Label: actual
+    };
+});
+
+console.table(
+    allEmails.map(e => ({
+        subject:
+            getEmailField(
+                e,
+                ['Subject','subject']
+            ),
+
+        actual:
+            e.Actual_Label,
+
+        predicted:
+            normalizeCategory(e)
+    }))
+);
+
+    const defaultedCount = totalEmails - userLabeledArr.length;
+    console.log(
+        `[EVAL] runEvaluation — total=${totalEmails}` +
+        ` | user-labeled=${userLabeledArr.length}` +
+        ` (phishing=${actualPhishing.length} safe=${actualSafe.length})` +
+        ` | defaulted-to-SAFE=${defaultedCount}`
+    );
+
+    /* Hidden textareas for reference (user-labeled subset only) */
+    const yTrue = userLabeledArr.map(e => normalizeActualLabel(e.Actual_Label) === 'PHISHING' ? 1 : 0);
+    const yPred = userLabeledArr.map(e => normalizeCategory(e) === 'SAFE' ? 0 : 1);
     document.getElementById('yTrue').value = yTrue.join(',');
     document.getElementById('yPred').value = yPred.join(',');
 
     if (noteEl) noteEl.textContent =
-        `${totalEmails} emails total | ${labeledEmails.length} labeled` +
+        `${totalEmails} emails total | ${userLabeledArr.length} user-labeled` +
         ` (${actualPhishing.length} phishing · ${actualSafe.length} safe) | ` +
-        `${totalEmails - labeledEmails.length} unlabeled`;
+        `${defaultedCount} unlabeled (defaulted to Safe)`;
 
     /* Batch size */
     const rawBatch  = parseInt((document.getElementById('batchSize') || {}).value, 10);
-    const batchSize = Math.max(1, isNaN(rawBatch) ? DEFAULT_BATCH_SIZE : rawBatch);
+    const batchSize =
+    Number(
+        document.getElementById('batchSize')?.value
+    ) || 20;
 
-    /* Pass ALL emails so positional ranges (1–20, 21–40 …) are preserved */
+    /* Pass ALL emails — every email has a label (user-set or default SAFE),
+       so every email lands in exactly one confusion-matrix cell and
+       Samples = TP + FP + TN + FN is guaranteed for every batch. */
     const batches = evaluateInBatches(allEmails, batchSize);
 
     renderEvalTable(batches);
@@ -1007,9 +1160,8 @@ function runEvaluation() {
 }
 
 function renderEvalTable(batches) {
-    /* Samples = ALL emails in the batch range (labeled + unlabeled).
-       TP/FP/TN/FN = only labeled emails within that range.
-       Metrics are computed from the labeled subset (N = TP+FP+TN+FN). */
+    /* Samples = TP + FP + TN + FN always. All emails are batched; unlabeled ones
+       receive a default Actual_Label of SAFE before evaluation begins. */
     document.getElementById('evalTableBody').innerHTML = batches.map(b => `
         <tr>
             <td>#${b.batchIndex}</td>
