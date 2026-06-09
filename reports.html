@@ -304,6 +304,9 @@ body { display: flex; background: #f5f7fb; min-height: 100vh; }
                 <button class="btn" onclick="downloadPDF()">
                     <i data-lucide="download"></i> Download PDF
                 </button>
+                <button class="btn" onclick="resetLabelStore()" title="Clear old cached labels so the pie chart reflects only emails you manually labeled in Email Results" style="background:#e53e3e;border-color:#c53030;">
+                    <i data-lucide="trash-2"></i> Reset Labels
+                </button>
             </div>
         </div>
     </div>
@@ -468,6 +471,84 @@ function initActualLabels() {
         window.actualEmailLabels = {};
     }
 }
+/* ── One-time hard reset of corrupted label stores ─────────────────
+   Old code wrote the model's Category prediction into Actual_Label and
+   then propagated it into actualEmailLabels via _ensureLabelsAfterSave.
+   The corrupted data is permanently saved on the user's hard drive in
+   Chrome's localStorage — code fixes alone cannot undo it.
+
+   This function detects the first run of the fixed version (via a
+   version key), then:
+     1. Wipes actualEmailLabels (the poisoned store)
+     2. Strips Actual_Label from every record in emailAnalysisResults
+   After the wipe, only labels re-set by the user in email-results.html
+   will appear in the pie chart and recent-analysis table.
+── */
+const LABEL_STORE_VERSION = 4; /* bump this to force a re-clean */
+
+function stripCorruptedActualLabels() {
+    try {
+        const storedVersion = parseInt(localStorage.getItem('_labelStoreVersion') || '0', 10);
+        if (storedVersion < LABEL_STORE_VERSION) {
+            /* First run after fix — hard-reset both stores */
+            localStorage.setItem('actualEmailLabels', JSON.stringify({}));
+            window.actualEmailLabels = {};
+
+            /* Strip Actual_Label from emailAnalysisResults */
+            const raw = JSON.parse(localStorage.getItem('emailAnalysisResults') || '[]');
+            if (Array.isArray(raw) && raw.length > 0) {
+                const cleaned = raw.map(r => {
+                    if (!r.Actual_Label) return r;
+                    const c = {...r}; delete c.Actual_Label; return c;
+                });
+                localStorage.setItem('emailAnalysisResults', JSON.stringify(cleaned));
+            }
+
+            localStorage.setItem('_labelStoreVersion', String(LABEL_STORE_VERSION));
+            console.warn('[SECURETRACE] Label store reset to v' + LABEL_STORE_VERSION +
+                '. Old model-derived labels cleared. Re-label emails in Email Results if needed.');
+        }
+    } catch(e) {
+        console.warn('[CLEANUP] stripCorruptedActualLabels failed:', e);
+    }
+}
+
+/* Manual reset — called by the "Reset Labels" button in the UI */
+function resetLabelStore() {
+    if (!confirm(
+        'This clears ALL cached labels — the pie chart, Recent Analysis table, ' +
+        'AND the batch evaluator (TP/FP/TN/FN).\n\n' +
+        'After clearing:\n' +
+        '  1. Go to Email Results and re-label your phishing emails.\n' +
+        '  2. Return here and click "Run Evaluation".\n\n' +
+        'Your email data in Google Sheets is NOT affected. Continue?'
+    )) return;
+
+    /* Clear display labels */
+    localStorage.setItem('actualEmailLabels', JSON.stringify({}));
+    window.actualEmailLabels = {};
+
+    /* Strip Actual_Label from cached email records */
+    const raw = JSON.parse(localStorage.getItem('emailAnalysisResults') || '[]');
+    if (Array.isArray(raw)) {
+        const cleaned = raw.map(r => { const c={...r}; delete c.Actual_Label; return c; });
+        localStorage.setItem('emailAnalysisResults', JSON.stringify(cleaned));
+    }
+
+    /* Clear evaluation snapshots so the evaluator rebuilds from fresh labels */
+    localStorage.removeItem('evalLabelSnapshot');
+    localStorage.removeItem('evalPredSnapshot');
+
+    localStorage.setItem('_labelStoreVersion', String(LABEL_STORE_VERSION));
+    console.log('[SECURETRACE] Label store + eval snapshots manually reset.');
+    refreshAnalysis();
+    alert(
+        'Labels cleared.\n\n' +
+        'Next steps:\n' +
+        '1. Go to Email Results → label phishing emails as "Phishing".\n' +
+        '2. Return here → click "Run Evaluation" to see updated TP/FP/TN/FN.'
+    );
+}
 function getStats() {
     let s = JSON.parse(localStorage.getItem("stats"));
     if (!s) { initStats(); s = JSON.parse(localStorage.getItem("stats")); }
@@ -550,13 +631,11 @@ function getStoredActualLabel(email, labels=getActualLabels()) {
     return matchedKey ? normalizedLabels[matchedKey] : '';
 }
 function applyStoredActualLabel(email) {
-    const all = {...getActualLabels()};
-    const cached = JSON.parse(localStorage.getItem('emailAnalysisResults'))||[];
-    if (Array.isArray(cached)) cached.forEach(e => {
-        const al = normalizeActualLabel(e?.Actual_Label);
-        if (al) getEmailKeys(e).forEach(k => { all[k]=al; });
-    });
-    const label = normalizeActualLabel(email?.Actual_Label||getStoredActualLabel(email,all));
+    /* SOURCE OF TRUTH: only actualEmailLabels (written by the user in
+       email-results.html). Never read Actual_Label from emailAnalysisResults
+       — that field may have been set from the model's Category in an old
+       version and would corrupt every subsequent read. */
+    const label = getStoredActualLabel(email);
     return label ? {...email, Actual_Label: label} : email;
 }
 /* ── derivePrediction: field-only category detection ─────────────────
@@ -636,10 +715,56 @@ function normalizeCategory(record) {
     if (record && record._category) return record._category;
     return 'SAFE';
 }
+
+/* ── normalizeCategoryValue: direct string → category mapping ────────────
+   Covers ML model output formats that derivePrediction's keyword scan misses:
+   numeric classes ("1"/"0"), risk labels ("High"/"High Risk"), or any value
+   the Google Apps Script writes to the Category column that doesn't contain
+   the literal word "phish".  Called BEFORE keyword scanning so the raw ML
+   output always takes priority.
+─────────────────────────────────────────────────────────────────────────── */
+function normalizeCategoryValue(val) {
+    if (val === null || val === undefined || val === '') return null;
+    const v = String(val).trim().toLowerCase().replace(/[_\-\s]+/g, ' ');
+
+    /* ── Definite PHISHING ── */
+    if (v === '1' || v === 'true' || v === 'yes' || v === 'phishing' ||
+        v === 'phishing detected' || v === 'phishing email' || v === 'detected' ||
+        v === 'spam' || v === 'malicious' || v === 'fraud' || v === 'scam' ||
+        v === 'high' || v === 'high risk' || v === 'highrisk' ||
+        v === 'dangerous' || v === 'critical' || v === 'severe' || v === 'alert')
+        return 'PHISHING';
+
+    /* ── POTENTIAL / SUSPICIOUS ── */
+    if (v === 'potential phishing' || v === 'potential' || v === 'suspicious' ||
+        v === 'suspect' || v === 'medium' || v === 'medium risk' ||
+        v === 'moderate' || v === 'warning' || v === 'flagged')
+        return 'POTENTIAL_PHISHING';
+
+    /* ── Definite SAFE ── */
+    if (v === '0' || v === 'false' || v === 'no' || v === 'safe' ||
+        v === 'legitimate' || v === 'ham' || v === 'benign' ||
+        v === 'low' || v === 'low risk' || v === 'not phishing' ||
+        v === 'normal' || v === 'clean' || v === 'ok' || v === 'pass')
+        return 'SAFE';
+
+    /* Unknown value — let keyword scan try */
+    return null;
+}
 function getStatusLabel(email) {
     const cat = normalizeCategory(email);
     if (cat==='PHISHING') return 'Phishing';
     if (cat==='POTENTIAL_PHISHING') return 'Potential Phishing';
+    return 'Safe';
+}
+/* getDisplayStatus: reads ONLY from actualEmailLabels (the user-set store).
+   Never touches email.Actual_Label — that field may have been stamped from
+   the model's Category by old code and must not drive charts.
+   Unlabeled emails are shown as Safe. */
+function getDisplayStatus(email) {
+    const actual = getStoredActualLabel(email); /* reads actualEmailLabels only */
+    if (actual === 'PHISHING') return 'Phishing';
+    if (actual === 'POTENTIAL_PHISHING') return 'Potential Phishing';
     return 'Safe';
 }
 function getRecordTime(record) {
@@ -656,10 +781,14 @@ function getEmailAnalysisResults() {
     return getAllEmailAnalysisResults().slice(0,SESSION_METRICS_LIMIT).map(applyStoredActualLabel);
 }
 function getThreatSummary() {
-    const records = getEmailAnalysisResults();
-    const phishing  = records.filter(r=>normalizeCategory(r)==='PHISHING').length;
-    const potential = records.filter(r=>normalizeCategory(r)==='POTENTIAL_PHISHING').length;
-    return { total: records.length, phishing, potential, safe: Math.max(0,records.length-phishing-potential) };
+    const records = getAllEmailAnalysisResults();
+    /* Pie chart counts ONLY from actualEmailLabels (user-confirmed labels).
+       Never reads email.Actual_Label — it may be corrupted with model data.
+       Unlabeled emails count as Safe. Model predictions are for the
+       confusion matrix only. */
+    const phishing  = records.filter(r => getStoredActualLabel(r) === 'PHISHING').length;
+    const potential = records.filter(r => getStoredActualLabel(r) === 'POTENTIAL_PHISHING').length;
+    return { total: records.length, phishing, potential, safe: Math.max(0, records.length - phishing - potential) };
 }
 function syncStatsFromEmailResults() {
     const s=getThreatSummary(), stats=getStats();
@@ -698,27 +827,31 @@ function buildRecentAnalysisFromEmailResults() {
                 date: getEmailField(email,['Date','date','Email Date','Created At'])||'-',
                 sender: getEmailField(email,['From','Sender','Email From','from'])||'-',
                 subject: getEmailField(email,['Subject','Email Subject','subject'])||'-',
-                status: getStatusLabel(email)
+                status: getDisplayStatus(email)
             }))
     );
 }
 function getRecentAnalysis() {
+    /* Always rebuild from emailAnalysisResults using getDisplayStatus() so
+       the status column always reflects Actual_Label, never stale cached
+       model-prediction statuses that might be sitting in localStorage. */
+    const fresh = buildRecentAnalysisFromEmailResults();
+    if (fresh.length > 0) { saveRecentAnalysis(fresh); return fresh; }
+    /* Fallback: nothing in emailAnalysisResults yet — use the saved cache */
     try {
-        const records=JSON.parse(localStorage.getItem('recentAnalysis'))||[];
-        if (Array.isArray(records)&&records.length>0) {
-            const cleaned=cleanRecentAnalysisRecords(records);
-            if (cleaned.length>0) { if (cleaned.length!==records.length) saveRecentAnalysis(cleaned); return cleaned; }
+        const records = JSON.parse(localStorage.getItem('recentAnalysis')) || [];
+        if (Array.isArray(records) && records.length > 0) {
+            const cleaned = cleanRecentAnalysisRecords(records);
+            if (cleaned.length > 0) return cleaned;
         }
     } catch(e) {}
-    const fallback=buildRecentAnalysisFromEmailResults();
-    if (fallback.length>0) saveRecentAnalysis(fallback);
-    return fallback;
+    return [];
 }
 function saveRecentAnalysis(records) { localStorage.setItem('recentAnalysis',JSON.stringify(records)); }
 function syncRecentAnalysisFromResults(results) {
     saveRecentAnalysis(cleanRecentAnalysisRecords(
         [...results].sort((a,b)=>getRecordTime(b)-getRecordTime(a)).slice(0,10)
-            .map(email=>({date:email.Date||'-',sender:email.From||'-',subject:email.Subject||'-',status:getStatusLabel(email)}))
+            .map(email=>({date:email.Date||'-',sender:email.From||'-',subject:email.Subject||'-',status:getDisplayStatus(email)}))
     ));
 }
 
@@ -870,7 +1003,19 @@ function handleReportResults(data) {
             if (subj && subjCategoryMap[subj]) cat = subjCategoryMap[subj];
         }
 
-        /* 3. Derive fresh from raw fields */
+        /* 3a. Direct mapping from raw Category/Prediction field value
+              (catches ML outputs like "1", "High Risk", "Phishing Detected"
+               that derivePrediction's keyword scan misses) */
+        if (!cat) {
+            const rawVal = getEmailField(withLabel, [
+                'Category','Prediction','Predicted_Label','Predicted Label',
+                'Predicted','Category_Name','CategoryName','Category_Label',
+                'category_label','Result','Classification'
+            ]);
+            cat = normalizeCategoryValue(rawVal);
+        }
+
+        /* 3b. Keyword-scan fallback */
         if (!cat) cat = derivePrediction(withLabel);
 
         return cat ? { ...withLabel, _category: cat } : withLabel;
@@ -939,15 +1084,22 @@ function initActivityTracking() {
    BATCH ML EVALUATOR
 ════════════════════════════════════════ */
 
-/* ── Ensure actual labels survive a live-sync overwrite ── */
+/* ── Ensure actual labels survive a live-sync overwrite ──
+   Only refreshes keys that ALREADY exist in actualEmailLabels (i.e. the
+   user deliberately set them). Never adds new keys — that would let
+   records with a stale / model-derived Actual_Label pollute the store. */
 function _ensureLabelsAfterSave(savedRecords) {
     const existing = getActualLabels();
+    const existingKeys = new Set(Object.keys(existing));
+    if (existingKeys.size === 0) return; /* nothing to protect */
     let changed = false;
     (savedRecords || []).forEach(e => {
         const al = normalizeActualLabel(e?.Actual_Label);
         if (!al) return;
         getEmailKeys(e).forEach(k => {
-            if (existing[k] !== al) { existing[k] = al; changed = true; }
+            if (existingKeys.has(k) && existing[k] !== al) {
+                existing[k] = al; changed = true;
+            }
         });
     });
     if (changed) localStorage.setItem('actualEmailLabels', JSON.stringify(existing));
@@ -1046,13 +1198,25 @@ function runEvaluation() {
 
     /* ── Step 2: Resolve the model prediction for every email.
        Priority:
-         1. _category on the record (preserved by handleReportResults)
-         2. evalPredSnapshot[subject] — captured before live sync
-         3. derivePrediction          — field-scan fallback
+         1. Raw Category/Prediction field from the record — the ML model's
+            direct output. normalizeCategoryValue handles non-keyword formats
+            like "1", "High Risk", "Phishing Detected" that the keyword scan
+            misses.
+         2. _category on the record (preserved by handleReportResults)
+         3. evalPredSnapshot[subject] — captured before live sync
+         4. derivePrediction          — keyword-scan field fallback
     ── */
     const withFreshPred = rawResults.map(email => {
         const subj = String(getEmailField(email, ['Subject','Email Subject']) || '').trim().toLowerCase();
-        const pred  = email._category || predSnap[subj] || derivePrediction(email);
+        const rawCatField = getEmailField(email, [
+            'Category','Prediction','Predicted_Label','Predicted Label',
+            'Predicted','Category_Name','CategoryName','Category_Label',
+            'category_label','Result','Classification'
+        ]);
+        const pred = normalizeCategoryValue(rawCatField)
+                  || email._category
+                  || predSnap[subj]
+                  || derivePrediction(email);
         return { ...email, _predCategory: pred };
     });
 
@@ -1073,10 +1237,23 @@ function runEvaluation() {
         /* 2. Pre-sync snapshot — subject-keyed, survives live sync overwrites */
         if (!actual && subj && labelSnap[subj]) actual = labelSnap[subj];
 
-        /* 3. actualEmailLabels strict key match */
+        /* 3. actualEmailLabels strict key match (msgid / date|sender|subject) */
         if (!actual) {
             for (const key of getEmailKeys(email)) {
                 if (userLabels[key]) { actual = userLabels[key]; break; }
+            }
+        }
+
+        /* 4. Subject-based scan of actualEmailLabels — catches labels stored
+              under date|sender|subject keys when getEmailKeys() generates a
+              different date or sender format on the fresh record. */
+        if (!actual && subj && subj.length >= 2) {
+            for (const [key, lbl] of Object.entries(userLabels)) {
+                const parts = key.split('|');
+                if (parts.length >= 3) {
+                    const keySubj = parts.slice(2).join('|').trim().toLowerCase();
+                    if (keySubj === subj) { actual = normalizeActualLabel(lbl); break; }
+                }
             }
         }
 
@@ -1318,7 +1495,10 @@ function snapshotLabelsAndPreds() {
     const labelSnap = JSON.parse(localStorage.getItem('evalLabelSnapshot') || '{}');
     const predSnap  = JSON.parse(localStorage.getItem('evalPredSnapshot')  || '{}');
 
-    /* 1. Read Actual_Label and _category directly from stamped records */
+    /* 1. Read Actual_Label and _category directly from stamped records.
+          For predictions, also try the raw Category/Prediction field using
+          normalizeCategoryValue — catches ML outputs ("1","High Risk",etc.)
+          that were missed by derivePrediction when _category was last saved. */
     (Array.isArray(records) ? records : []).forEach(e => {
         const subj = String(getEmailField(e, ['Subject','Email Subject']) || '').trim().toLowerCase();
         if (!subj || subj.length < 2) return;
@@ -1326,7 +1506,13 @@ function snapshotLabelsAndPreds() {
         const al = normalizeActualLabel(e.Actual_Label || e.actual_label || '');
         if (al) labelSnap[subj] = al;
 
-        const cat = e._category;
+        /* Prediction: raw field takes priority over stored _category */
+        const rawCatField = getEmailField(e, [
+            'Category','Prediction','Predicted_Label','Predicted Label',
+            'Predicted','Category_Name','CategoryName','Category_Label',
+            'category_label','Result','Classification'
+        ]);
+        const cat = normalizeCategoryValue(rawCatField) || e._category || derivePrediction(e);
         if (cat) predSnap[subj] = cat;
     });
 
@@ -1357,6 +1543,7 @@ function snapshotLabelsAndPreds() {
 ════════════════════════════════════════ */
 window.onload = function () {
     initActualLabels();
+    stripCorruptedActualLabels(); /* remove model-derived Actual_Label from cached records */
     snapshotLabelsAndPreds();    /* ← must run BEFORE loadReportResults wipes records */
     resetProjectCountsOnce();
     mergeActualLabelsFromUrl();
@@ -1372,10 +1559,17 @@ window.onload = function () {
         if (!reportLoading) loadReportResults();
     });
 
-    /* Auto-run evaluation when returning from the Email Results page */
+    /* Auto-run evaluation when returning from the Email Results page.
+       Poll until the live sync has finished so runEvaluation sees the
+       fully restored records (labels + _category). Retries every 300 ms
+       up to 20 times (6 seconds max). */
     if (localStorage.getItem('autoRunEval') === '1') {
         localStorage.removeItem('autoRunEval');
-        setTimeout(runEvaluation, 600);
+        const _waitAndEval = (tries) => {
+            if (!reportLoading || tries <= 0) { runEvaluation(); }
+            else { setTimeout(() => _waitAndEval(tries - 1), 300); }
+        };
+        _waitAndEval(20);
     }
 };
 </script>
