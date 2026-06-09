@@ -559,15 +559,81 @@ function applyStoredActualLabel(email) {
     const label = normalizeActualLabel(email?.Actual_Label||getStoredActualLabel(email,all));
     return label ? {...email, Actual_Label: label} : email;
 }
+/* ── derivePrediction: field-only category detection ─────────────────
+   Always reads raw email fields. Never short-circuits on _category so
+   a stale value from a previous live-sync overwrite cannot hide real
+   phishing predictions.
+
+   The two bugs this replaces:
+     1. cat === 'PHISHING' (exact) missed "Phishing Detected", "PHISHING DETECTED", etc.
+     2. risk.includes('phishing') missed Risk:"High" / Risk:"Dangerous" from Gmail scanners.
+─────────────────────────────────────────────────────────────────────── */
+function derivePrediction(record) {
+    if (!record) return 'SAFE';
+
+    /* ── Named-field scan (fast path) ─────────────────────────────── */
+    const label = String(getEmailField(record,[
+        'Category_Label','Category Label','Prediction_Label','Prediction Label',
+        'Label','Status','Scan_Result','ScanResult','Detection',
+        'Classification','Verdict','Alert','Result','Tag','Flag'
+    ])||'').toLowerCase().trim();
+
+    const cat = String(getEmailField(record,[
+        'Category','Prediction','Predicted_Label','Predicted Label',
+        'Predicted','Category_Name','CategoryName','type','Type'
+    ])||'').toLowerCase().trim();
+
+    const risk = String(getEmailField(record,[
+        'Risk','Risk_Level','Risk Level','Threat','Threat_Level',
+        'ThreatLevel','Severity','Priority','DangerLevel','Danger_Level'
+    ])||'').toLowerCase().trim();
+
+    const namedText = label + ' ' + cat + ' ' + risk;
+
+    /* ── ALL-FIELDS scan (fallback — catches any field name GAS uses) ─
+       Scan every string value in the record object. Skip obviously
+       irrelevant fields (Subject/From/Date) to avoid false positives
+       from email body content.                                        */
+    const SKIP_FIELDS = new Set([
+        'subject','from','to','date','body','snippet','message_id',
+        'messageid','msgid','actual_label','actual label','_category',
+        '_predcategory'
+    ]);
+    const allFieldsText = Object.entries(record)
+        .filter(([k, v]) => typeof v === 'string' && !SKIP_FIELDS.has(k.toLowerCase().replace(/[\s_-]/g,'')))
+        .map(([, v]) => v.toLowerCase())
+        .join(' ');
+
+    const allText = namedText + ' ' + allFieldsText;
+
+    /* ── Classification rules ─────────────────────────────────────── */
+
+    /* Potential phishing — must check BEFORE plain phishing */
+    if (allText.includes('potential phish') || allText.includes('potential_phish')) return 'POTENTIAL_PHISHING';
+    if (
+        (allText.includes('potential') || allText.includes('suspicious') || allText.includes('suspect') || risk === 'medium' || risk === 'moderate') &&
+        (allText.includes('phish') || allText.includes('malicious') || allText.includes('spam') || allText.includes('scam') || allText.includes('fraud'))
+    ) return 'POTENTIAL_PHISHING';
+
+    /* Phishing */
+    if (allText.includes('phish'))                                                         return 'PHISHING';
+    if (risk === 'high' || risk === 'dangerous' || risk === 'critical' || risk === 'severe') return 'PHISHING';
+    if (allText.includes('malicious') || allText.includes('scam') ||
+        allText.includes('fraud') || allText.includes('danger'))                           return 'PHISHING';
+
+    /* Potential phishing — medium/suspicious risk */
+    if (risk === 'medium' || risk === 'moderate' || risk === 'suspicious' || risk === 'suspect') return 'POTENTIAL_PHISHING';
+
+    return 'SAFE';
+}
+
 function normalizeCategory(record) {
-    /* Prefer the category stamped at save-time by email-results.html —
-       avoids field-name guessing and guarantees the same value the user saw. */
+    /* Always try field-based detection first — _category can be stale
+       after a live-sync overwrite wipes it from the stored records.
+       Only fall back to _category when field detection finds nothing. */
+    const fromFields = derivePrediction(record);
+    if (fromFields !== 'SAFE') return fromFields;
     if (record && record._category) return record._category;
-    const label = String(getEmailField(record,['Category_Label','Category Label','Prediction_Label','Prediction Label','Label','Status'])||'').toLowerCase();
-    const cat   = String(getEmailField(record,['Category','Prediction','Predicted_Label','Predicted Label','Predicted','Result'])||'').toUpperCase();
-    const risk  = String(getEmailField(record,['Risk','Risk_Level','Risk Level','Threat'])||'').toLowerCase();
-    if (label.includes('potential')||cat==='POTENTIAL_PHISHING') return 'POTENTIAL_PHISHING';
-    if (label.includes('phishing')||cat==='PHISHING'||risk.includes('phishing')) return 'PHISHING';
     return 'SAFE';
 }
 function getStatusLabel(email) {
@@ -760,14 +826,58 @@ async function loadReportResults() {
 }
 
 function handleReportResults(data) {
-    /* FIX 4: keep ALL records uncapped for evaluation; only display is limited */
     const raw = extractEmailResults(data);
-    const labeled = raw.map(applyStoredActualLabel);
+
+    /* ── Preserve _category from the old records before overwriting.
+       email-results.html stamps _category = normalizeCategory(email) at
+       save-time, which is the authoritative model prediction.  A live sync
+       brings fresh records with NO _category.  Without this step, every
+       sync wipes the predictions and makes TP/FP go to 0.
+
+       Build two lookup maps from the OLD cached records:
+         keyCategoryMap  : key  → _category  (exact-key match)
+         subjCategoryMap : subj → _category  (subject fuzzy match)
+    ── */
+    const oldRecords = getAllEmailAnalysisResults();
+    const keyCategoryMap  = {};
+    const subjCategoryMap = {};
+    oldRecords.forEach(e => {
+        const cat = e._category;
+        if (!cat) return;
+        getEmailKeys(e).forEach(k => { keyCategoryMap[k] = cat; });
+        const subj = String(getEmailField(e, ['Subject','Email Subject'])||'').trim().toLowerCase();
+        if (subj.length > 3) subjCategoryMap[subj] = cat;
+    });
+
+    /* Restore _category + Actual_Label onto each fresh record */
+    const labeled = raw.map(email => {
+        /* --- Actual_Label --- */
+        const withLabel = applyStoredActualLabel(email);
+
+        /* --- _category --- */
+        if (withLabel._category) return withLabel;   // already set (e.g. second sync)
+
+        let cat = null;
+
+        /* 1. Exact key match */
+        for (const k of getEmailKeys(withLabel)) {
+            if (keyCategoryMap[k]) { cat = keyCategoryMap[k]; break; }
+        }
+
+        /* 2. Subject fuzzy match */
+        if (!cat) {
+            const subj = String(getEmailField(withLabel, ['Subject','Email Subject'])||'').trim().toLowerCase();
+            if (subj && subjCategoryMap[subj]) cat = subjCategoryMap[subj];
+        }
+
+        /* 3. Derive fresh from raw fields */
+        if (!cat) cat = derivePrediction(withLabel);
+
+        return cat ? { ...withLabel, _category: cat } : withLabel;
+    });
+
     if (labeled.length > 0) {
-        /* Save full uncapped array so the evaluator can see every labeled email */
         localStorage.setItem('emailAnalysisResults', JSON.stringify(labeled));
-        /* FIX 4: after saving, sync any surviving Actual_Label fields back to
-           actualEmailLabels so labels are never lost on future live-syncs */
         _ensureLabelsAfterSave(labeled);
         reportResults = labeled.slice(0, MAX_EMAILS_TO_SHOW);
         syncRecentAnalysisFromResults(reportResults);
@@ -827,28 +937,10 @@ function initActivityTracking() {
 
 /* ════════════════════════════════════════
    BATCH ML EVALUATOR
-   ────────────────────────────────────────
-   FIX SUMMARY (5 root-cause bugs fixed):
-   1. Batching was applied to ALL emails; unlabeled ones were silently
-      skipped inside each batch, producing empty batches when labeled
-      emails are sparse. Fix: filter to labeled-only FIRST, then batch.
-   2. MAX_EMAILS_TO_SHOW (50) cap was applied before evaluation, hiding
-      any labeled emails beyond index 49. Fix: read full uncapped array.
-   3. Batch size was silently capped at DEFAULT_BATCH_SIZE=20 by a
-      Math.min() guard. Fix: removed the wrong cap.
-   4. Live sync in handleReportResults could overwrite emailAnalysisResults
-      before labels were confirmed to survive key-matching. Fix: always
-      re-merge actualEmailLabels after a live sync save.
-   5. syncReportDataFromResults in email-results.html sliced the save to
-      50 records, permanently losing labels on records beyond index 49.
-      Fix applied in email-results.html: save full array, slice only for
-      stats/display.
 ════════════════════════════════════════ */
 
-/* ── FIX 4: ensure labels survive a live-sync overwrite ── */
+/* ── Ensure actual labels survive a live-sync overwrite ── */
 function _ensureLabelsAfterSave(savedRecords) {
-    /* Re-build actualEmailLabels from whatever Actual_Label fields
-       survived the merge, so the label store is always in sync. */
     const existing = getActualLabels();
     let changed = false;
     (savedRecords || []).forEach(e => {
@@ -862,149 +954,69 @@ function _ensureLabelsAfterSave(savedRecords) {
 }
 
 /* ── evaluateInBatches ──────────────────────────────────────────────
-   Receives ALL emails. Every email is guaranteed to have Actual_Label
-   set by the caller (unlabeled emails get the default 'SAFE' label).
-   Therefore every email lands in exactly one confusion-matrix cell and:
+   Receives all emails. Each email must have:
+     - Actual_Label    : 'PHISHING' | 'SAFE'  (set by caller)
+     - _predCategory   : model prediction derived fresh from raw fields
 
-       Samples = TP + FP + TN + FN  (always, by construction)
+   Binary classification (positive = PHISHING or POTENTIAL_PHISHING):
+     TP : actual=phishing, predicted=phishing
+     FP : actual=safe,     predicted=phishing
+     TN : actual=safe,     predicted=safe
+     FN : actual=phishing, predicted=safe
 
-   Predictions:
-     PHISHING / POTENTIAL_PHISHING  → positive (1)
-     SAFE                           → negative (0)
-   Formula:
-     Accuracy  = (TP + TN) / (TP + TN + FP + FN)
-     Precision = TP / (TP + FP)
-     Recall    = TP / (TP + FN)
-     F1        = 2 * Precision * Recall / (Precision + Recall)
+   Guarantee: Samples = TP + FP + TN + FN for every batch.
 ─────────────────────────────────────────────────────────────────── */
 function evaluateInBatches(allEmails, batchSize) {
     const results = [];
-    console.group(
-        `[EVAL] evaluateInBatches — ${allEmails.length} emails total` +
-        ` | batchSize=${batchSize}` +
-        ` | batches=${Math.ceil(allEmails.length / batchSize)}`
-    );
+    console.group(`[EVAL] ${allEmails.length} emails | batchSize=${batchSize} | batches=${Math.ceil(allEmails.length / batchSize)}`);
 
     for (let start = 0; start < allEmails.length; start += batchSize) {
-        const batch   = allEmails.slice(start, start + batchSize);
-        let tp = 0, fp = 0, tn = 0, fn = 0, skipped = 0;
+        const batch = allEmails.slice(start, start + batchSize);
+        let tp = 0, fp = 0, tn = 0, fn = 0;
 
         batch.forEach((email, idx) => {
-            const globalIdx  = start + idx + 1;
-            const actualLabel = normalizeActualLabel(email.Actual_Label);
-            const predCat    = normalizeCategory(email);
-            const subject    = String(getEmailField(email,['Subject','subject']) || '(no subject)').slice(0, 60);
+            const actual  = normalizeActualLabel(email.Actual_Label);
+            const predCat = email._predCategory || normalizeCategory(email);
 
-            /* Failsafe: caller should have defaulted every email to SAFE */
-            if (!actualLabel) {
-                skipped++;
-                console.warn(`  [${globalIdx}] SKIPPED — Actual_Label still missing after defaulting`, email);
-                return;
-            }
+            const truthBin = (actual === 'PHISHING' || actual === 'POTENTIAL_PHISHING') ? 1 : 0;
+            const predBin  = (predCat === 'PHISHING' || predCat === 'POTENTIAL_PHISHING') ? 1 : 0;
 
-            const truth =
-(
-    actualLabel === 'PHISHING' ||
-    actualLabel === 'POTENTIAL_PHISHING'
-)
-? 1
-: 0;
-            const predBin = predCat === 'SAFE' ? 0 : 1;
+            if      (truthBin === 1 && predBin === 1) tp++;
+            else if (truthBin === 0 && predBin === 1) fp++;
+            else if (truthBin === 0 && predBin === 0) tn++;
+            else                                       fn++;
 
-            let classification;
-            if      (truth === 1 && predBin === 1) { tp++; classification = 'TP'; }
-            else if (truth === 0 && predBin === 1) { fp++; classification = 'FP'; }
-            else if (truth === 0 && predBin === 0) { tn++; classification = 'TN'; }
-            else                                   { fn++; classification = 'FN'; }
-
-            console.log(JSON.stringify({
-                index           : globalIdx,
-                subject,
-                actualLabel,
-                predictedLabel  : predCat,
-                classification
-            }));
+            console.log(`[${start + idx + 1}] actual=${actual} predicted=${predCat} → ${
+                truthBin===1&&predBin===1?'TP':truthBin===0&&predBin===1?'FP':truthBin===0&&predBin===0?'TN':'FN'
+            }`);
         });
 
-        const samples =
-    tp + fp + tn + fn;
-
-if (samples !== batch.length) {
-
-    console.error(
-        'Confusion matrix mismatch',
-        {
-            batchSize : batch.length,
-            tp,
-            fp,
-            tn,
-            fn,
-            samples
-        }
-    );
-}
-
-        const totalCounted = tp + tn + fp + fn;
-        if (totalCounted !== batch.length - skipped) {
-            console.error('Batch count mismatch', {
-                batchSize : batch.length,
-                tp, tn, fp, fn,
-                totalCounted
-            });
-        }
-
-        console.log(
-            `[EVAL] Batch ${results.length + 1}` +
-            ` emails ${start + 1}–${start + batch.length}` +
-            ` | entering=${batch.length} skipped=${skipped}` +
-            ` | TP=${tp} FP=${fp} TN=${tn} FN=${fn}` +
-            ` | TP+FP+TN+FN=${totalCounted}` +
-            ` | Samples=TP+FP+TN+FN: ${totalCounted === batch.length - skipped ? '✓' : '✗ MISMATCH'}`
-        );
-
-        const n         = totalCounted;
+        const n         = tp + fp + tn + fn;
         const accuracy  = n > 0 ? (tp + tn) / n : 0;
         const precision = (tp + fp) > 0 ? tp / (tp + fp) : 0;
         const recall    = (tp + fn) > 0 ? tp / (tp + fn) : 0;
-        const f1        = (precision + recall) > 0
-                          ? 2 * precision * recall / (precision + recall) : 0;
+        const f1        = (precision + recall) > 0 ? 2 * precision * recall / (precision + recall) : 0;
+
+        console.log(`Batch ${results.length + 1}: TP=${tp} FP=${fp} TN=${tn} FN=${fn} | acc=${(accuracy*100).toFixed(1)}%`);
 
         results.push({
             batchIndex  : results.length + 1,
             batchRange  : [start + 1, start + batch.length],
-            samples     : n,         /* = TP+FP+TN+FN */
+            samples     : n,
             labeledCount: n,
             counts      : { tp, fp, tn, fn },
             metrics     : { accuracy, precision, recall, f1 }
         });
     }
 
-    const totTP = results.reduce((s,b) => s + b.counts.tp, 0);
-    const totFP = results.reduce((s,b) => s + b.counts.fp, 0);
-    const totTN = results.reduce((s,b) => s + b.counts.tn, 0);
-    const totFN = results.reduce((s,b) => s + b.counts.fn, 0);
-    console.log(
-        `[EVAL] OVERALL — Total emails=${allEmails.length}` +
-        ` | TP=${totTP} FP=${totFP} TN=${totTN} FN=${totFN}` +
-        ` | sum=${totTP + totFP + totTN + totFN}` +
-        ` | Total=sum: ${totTP + totFP + totTN + totFN === allEmails.length ? '✓' : '✗ MISMATCH'}`
-    );
     console.groupEnd();
     return results;
 }
 
-function parseLabels(raw) {
-    return raw.trim().split(/[\s,;]+/).filter(s=>s!=='').map(s=>{
-        const n=Number(s);
-        if (n!==0&&n!==1) throw new Error(`Invalid label "${s}" — only 0 and 1 are allowed.`);
-        return n;
-    });
-}
-
 function f1Badge(f1) {
-    const pct=(f1*100).toFixed(1);
-    if (f1>=0.7) return `<span class="badge badge-green">${pct}%</span>`;
-    if (f1>=0.4) return `<span class="badge badge-yellow">${pct}%</span>`;
+    const pct = (f1 * 100).toFixed(1);
+    if (f1 >= 0.7) return `<span class="badge badge-green">${pct}%</span>`;
+    if (f1 >= 0.4) return `<span class="badge badge-yellow">${pct}%</span>`;
     return `<span class="badge badge-red">${pct}%</span>`;
 }
 
@@ -1014,145 +1026,111 @@ function runEvaluation() {
     errEl.style.display = 'none';
     errEl.textContent   = '';
 
-    /* Remove any leftover debug panel from a previous run */
-    const oldPanel = document.getElementById('evalDebugPanel');
-    if (oldPanel) oldPanel.remove();
+    /* ── Step 1: Read the full uncapped array ── */
+    const rawResults = JSON.parse(localStorage.getItem('emailAnalysisResults') || '[]');
 
-    /* Read the FULL uncapped array from storage */
-    const rawResults =
-    JSON.parse(localStorage.getItem('emailAnalysisResults') || '[]');
-
-if (!Array.isArray(rawResults) || rawResults.length === 0) {
-    errEl.textContent =
-        'No email scan results are available yet.';
-    errEl.style.display = 'inline';
-    return;
-}
-
-/*
-   Priority order:
-
-   1. User-selected Actual_Label
-   2. Dataset Actual_Label
-   3. Backend Actual_Label
-   4. Default SAFE
-*/
-
-const userLabels = getActualLabels();
-
-
-    /* Step 1 — Apply user-set labels; clear any sheet-origin embedded values. */
-    const withUserLabels = rawResults.map(email => {
-        const storedLabel = normalizeActualLabel(getStoredActualLabel(email, userLabels));
-        if (storedLabel) return { ...email, Actual_Label: storedLabel };
-        const e = { ...email };
-        delete e.Actual_Label;
-        return e;
-    });
-
-    const totalEmails    = withUserLabels.length;
-    const userLabeledArr = withUserLabels.filter(e => normalizeActualLabel(e.Actual_Label) !== '');
-    const actualPhishing = userLabeledArr.filter(e => normalizeActualLabel(e.Actual_Label) === 'PHISHING');
-    const actualSafe     = userLabeledArr.filter(e => normalizeActualLabel(e.Actual_Label) === 'SAFE');
-
-    /* Require at least one user label before evaluating — otherwise metrics
-       would be meaningless (all 50 emails default to SAFE = 0 phishing ground truth). */
-    if (userLabeledArr.length === 0) {
-        if (noteEl) noteEl.innerHTML =
-            `${totalEmails} emails loaded | 0 user-labeled — go to ` +
-            `<a href="email-results.html" style="color:#2b6cff;font-weight:600;text-decoration:underline;">Email Results</a>` +
-            ` and assign <strong>Actual Labels</strong> first.`;
-        errEl.innerHTML =
-            'No labeled emails found. Assign <a href="email-results.html"' +
-            ' style="color:#2b6cff;font-weight:600;text-decoration:underline;">Actual Label</a>' +
-            ' values on the Email Results page first.';
+    if (!Array.isArray(rawResults) || rawResults.length === 0) {
+        errEl.textContent   = 'No email scan results are available yet.';
         errEl.style.display = 'inline';
         return;
     }
 
-    /* Step 2 — Default every unlabeled email to SAFE.
-       This makes every email evaluable (all must land in TP/FP/TN/FN).
-       Rationale: in phishing detection, "not confirmed phishing" = safe. */
-    const allEmails = rawResults.map(email => {
+    /* ── Load pre-sync snapshots (built in window.onload before live sync ran) ── */
+    const labelSnap = JSON.parse(localStorage.getItem('evalLabelSnapshot') || '{}');
+    const predSnap  = JSON.parse(localStorage.getItem('evalPredSnapshot')  || '{}');
 
-    let actual = null;
+    console.log(`[EVAL] labelSnap size=${Object.keys(labelSnap).length} | predSnap size=${Object.keys(predSnap).length}`);
+    if (Object.keys(labelSnap).length === 0) {
+        console.warn('[EVAL] evalLabelSnapshot is empty — labels may not have been captured yet. Navigate to Email Results and back to refresh.');
+    }
 
-    const keys = getEmailKeys(email);
+    /* ── Step 2: Resolve the model prediction for every email.
+       Priority:
+         1. _category on the record (preserved by handleReportResults)
+         2. evalPredSnapshot[subject] — captured before live sync
+         3. derivePrediction          — field-scan fallback
+    ── */
+    const withFreshPred = rawResults.map(email => {
+        const subj = String(getEmailField(email, ['Subject','Email Subject']) || '').trim().toLowerCase();
+        const pred  = email._category || predSnap[subj] || derivePrediction(email);
+        return { ...email, _predCategory: pred };
+    });
 
-    for (const key of keys) {
-        if (userLabels[key]) {
-            actual = userLabels[key];
-            break;
+    /* ── Step 3: Resolve actual labels.
+       Priority:
+         1. Actual_Label already on the record
+         2. evalLabelSnapshot[subject] — captured before live sync (most reliable)
+         3. actualEmailLabels key match (msgid / date|sender|subject)
+    ── */
+    const userLabels = getActualLabels();
+
+    const withActual = withFreshPred.map(email => {
+        const subj = String(getEmailField(email, ['Subject','Email Subject']) || '').trim().toLowerCase();
+
+        /* 1. Already stamped on the record */
+        let actual = normalizeActualLabel(email.Actual_Label || email.actual_label || email.Label || '');
+
+        /* 2. Pre-sync snapshot — subject-keyed, survives live sync overwrites */
+        if (!actual && subj && labelSnap[subj]) actual = labelSnap[subj];
+
+        /* 3. actualEmailLabels strict key match */
+        if (!actual) {
+            for (const key of getEmailKeys(email)) {
+                if (userLabels[key]) { actual = userLabels[key]; break; }
+            }
         }
+
+        return actual ? { ...email, Actual_Label: actual } : email;
+    });
+
+    /* ── Step 4: Count labeled emails ── */
+    const totalEmails    = withActual.length;
+    const userLabeledArr = withActual.filter(e => normalizeActualLabel(e.Actual_Label) !== '');
+    const phishingLabels = userLabeledArr.filter(e => normalizeActualLabel(e.Actual_Label) === 'PHISHING');
+    const safeLabels     = userLabeledArr.filter(e => normalizeActualLabel(e.Actual_Label) === 'SAFE');
+
+    if (userLabeledArr.length === 0) {
+        if (noteEl) noteEl.innerHTML =
+            `${totalEmails} emails loaded | 0 labeled — go to ` +
+            `<a href="email-results.html" style="color:#2b6cff;font-weight:600;text-decoration:underline;">Email Results</a>` +
+            ` and set <strong>Actual Labels</strong> first.`;
+        errEl.innerHTML =
+            'No labeled emails found. Assign <a href="email-results.html"' +
+            ' style="color:#2b6cff;font-weight:600;text-decoration:underline;">Actual Labels</a>' +
+            ' on the Email Results page first.';
+        errEl.style.display = 'inline';
+        return;
     }
 
-    if (!actual) {
-        actual =
-            normalizeActualLabel(
-                email.Actual_Label ||
-                email.actual_label ||
-                email.Label ||
-                email.label ||
-                ''
-            );
-    }
-
-    if (!actual) {
-        actual = 'SAFE';
-    }
-
-    return {
+    /* ── Step 5: Default every unlabeled email to SAFE so all emails land
+       in exactly one confusion-matrix cell and Samples = TP+FP+TN+FN. ── */
+    const allEmails = withActual.map(email => ({
         ...email,
-        Actual_Label: actual
-    };
-});
-
-console.table(
-    allEmails.map(e => ({
-        subject:
-            getEmailField(
-                e,
-                ['Subject','subject']
-            ),
-
-        actual:
-            e.Actual_Label,
-
-        predicted:
-            normalizeCategory(e)
-    }))
-);
+        Actual_Label: normalizeActualLabel(email.Actual_Label) || 'SAFE'
+    }));
 
     const defaultedCount = totalEmails - userLabeledArr.length;
-    console.log(
-        `[EVAL] runEvaluation — total=${totalEmails}` +
-        ` | user-labeled=${userLabeledArr.length}` +
-        ` (phishing=${actualPhishing.length} safe=${actualSafe.length})` +
-        ` | defaulted-to-SAFE=${defaultedCount}`
-    );
 
-    /* Hidden textareas for reference (user-labeled subset only) */
-    const yTrue = userLabeledArr.map(e => normalizeActualLabel(e.Actual_Label) === 'PHISHING' ? 1 : 0);
-    const yPred = userLabeledArr.map(e => normalizeCategory(e) === 'SAFE' ? 0 : 1);
-    document.getElementById('yTrue').value = yTrue.join(',');
-    document.getElementById('yPred').value = yPred.join(',');
+    /* Log prediction breakdown so it's easy to verify field detection works */
+    const predPhishing  = allEmails.filter(e => e._predCategory === 'PHISHING').length;
+    const predPotential = allEmails.filter(e => e._predCategory === 'POTENTIAL_PHISHING').length;
+    const predSafe      = allEmails.filter(e => e._predCategory === 'SAFE').length;
+    console.log(`[EVAL] total=${totalEmails} labeled=${userLabeledArr.length} (phishing=${phishingLabels.length} safe=${safeLabels.length}) defaulted=${defaultedCount}`);
+    console.log(`[EVAL] Predictions — PHISHING=${predPhishing} POTENTIAL=${predPotential} SAFE=${predSafe}`);
+    console.table(allEmails.map(e => ({
+        subject  : String(getEmailField(e,['Subject','subject'])||'').slice(0,50),
+        actual   : e.Actual_Label,
+        predicted: e._predCategory
+    })));
 
     if (noteEl) noteEl.textContent =
-        `${totalEmails} emails total | ${userLabeledArr.length} user-labeled` +
-        ` (${actualPhishing.length} phishing · ${actualSafe.length} safe) | ` +
-        `${defaultedCount} unlabeled (defaulted to Safe)`;
+        `${totalEmails} emails total | ${userLabeledArr.length} labeled` +
+        ` (${phishingLabels.length} phishing · ${safeLabels.length} safe)` +
+        ` | ${defaultedCount} unlabeled (defaulted to Safe)`;
 
-    /* Batch size */
-    const rawBatch  = parseInt((document.getElementById('batchSize') || {}).value, 10);
-    const batchSize =
-    Number(
-        document.getElementById('batchSize')?.value
-    ) || 20;
-
-    /* Pass ALL emails — every email has a label (user-set or default SAFE),
-       so every email lands in exactly one confusion-matrix cell and
-       Samples = TP + FP + TN + FN is guaranteed for every batch. */
-    const batches = evaluateInBatches(allEmails, batchSize);
+    /* ── Step 6: Batch and evaluate ── */
+    const batchSize = Math.max(1, parseInt(document.getElementById('batchSize')?.value, 10) || 20);
+    const batches   = evaluateInBatches(allEmails, batchSize);
 
     renderEvalTable(batches);
     renderEvalSummary(batches);
@@ -1322,10 +1300,64 @@ function clearEvaluator() {
 }
 
 /* ════════════════════════════════════════
+   PRE-SYNC SNAPSHOT
+   ────────────────────────────────────────
+   Called BEFORE loadReportResults() so labels and predictions are
+   captured while the localStorage records still have them stamped.
+   The live sync will overwrite emailAnalysisResults with fresh records
+   that have no Actual_Label / _category. This snapshot survives that.
+
+   Storage keys:
+     evalLabelSnapshot  :  { subject_lower → 'PHISHING'|'SAFE' }
+     evalPredSnapshot   :  { subject_lower → 'PHISHING'|'SAFE'|'POTENTIAL_PHISHING' }
+════════════════════════════════════════ */
+function snapshotLabelsAndPreds() {
+    const records = JSON.parse(localStorage.getItem('emailAnalysisResults') || '[]');
+
+    /* Start from existing snapshots (accumulate across visits) */
+    const labelSnap = JSON.parse(localStorage.getItem('evalLabelSnapshot') || '{}');
+    const predSnap  = JSON.parse(localStorage.getItem('evalPredSnapshot')  || '{}');
+
+    /* 1. Read Actual_Label and _category directly from stamped records */
+    (Array.isArray(records) ? records : []).forEach(e => {
+        const subj = String(getEmailField(e, ['Subject','Email Subject']) || '').trim().toLowerCase();
+        if (!subj || subj.length < 2) return;
+
+        const al = normalizeActualLabel(e.Actual_Label || e.actual_label || '');
+        if (al) labelSnap[subj] = al;
+
+        const cat = e._category;
+        if (cat) predSnap[subj] = cat;
+    });
+
+    /* 2. Also pull labels from actualEmailLabels — keys are either
+          "msgid:xxx"  (skip) or  "date|sender|subject" (extract subject) */
+    try {
+        const stored = JSON.parse(localStorage.getItem('actualEmailLabels') || '{}');
+        Object.entries(stored).forEach(([key, lbl]) => {
+            const normed = normalizeActualLabel(lbl);
+            if (!normed) return;
+            const parts = key.split('|');
+            if (parts.length >= 3) {
+                /* subject = everything after first two pipe segments */
+                const subj = parts.slice(2).join('|').trim().toLowerCase();
+                if (subj && subj.length >= 2) labelSnap[subj] = normed;
+            }
+        });
+    } catch (_) { /* ignore */ }
+
+    localStorage.setItem('evalLabelSnapshot', JSON.stringify(labelSnap));
+    localStorage.setItem('evalPredSnapshot',  JSON.stringify(predSnap));
+
+    console.log(`[SNAPSHOT] labels captured=${Object.keys(labelSnap).length} | preds=${Object.keys(predSnap).length}`);
+}
+
+/* ════════════════════════════════════════
    INIT
 ════════════════════════════════════════ */
 window.onload = function () {
     initActualLabels();
+    snapshotLabelsAndPreds();    /* ← must run BEFORE loadReportResults wipes records */
     resetProjectCountsOnce();
     mergeActualLabelsFromUrl();
     initStats();
@@ -1340,8 +1372,7 @@ window.onload = function () {
         if (!reportLoading) loadReportResults();
     });
 
-    /* Auto-run evaluation when returning from the Email Results page
-       after the user has assigned Actual Labels. */
+    /* Auto-run evaluation when returning from the Email Results page */
     if (localStorage.getItem('autoRunEval') === '1') {
         localStorage.removeItem('autoRunEval');
         setTimeout(runEvaluation, 600);
