@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -116,7 +116,7 @@ button {
 table {
     width: 100%;
     border-collapse: collapse;
-    table-layout: fixed;
+    table-layout: auto;
 }
 
 th, td {
@@ -124,9 +124,19 @@ th, td {
     text-align: left;
 }
 
+/* Column width hints — browser auto-sizes within these ranges */
+th:nth-child(1), td:nth-child(1) { min-width: 90px;  width: 9%;  }   /* Date */
+th:nth-child(2), td:nth-child(2) { min-width: 130px; width: 14%; }   /* From */
+th:nth-child(3), td:nth-child(3) { min-width: 180px; width: 20%; word-break: break-word; }  /* Subject */
+th:nth-child(4), td:nth-child(4) { min-width: 110px; width: 11%; white-space: nowrap; }     /* Category */
+th:nth-child(5), td:nth-child(5) { min-width: 120px; width: 13%; }   /* Actual Label */
+th:nth-child(6), td:nth-child(6) { min-width: 70px;  width: 8%;  }   /* Risk */
+th:nth-child(7), td:nth-child(7) { min-width: 90px;  width: 10%; }   /* Confidence */
+th:nth-child(8), td:nth-child(8) { min-width: 100px; width: 10%; }   /* URLs */
+th:nth-child(9), td:nth-child(9) { min-width: 80px;  width: 8%;  word-break: break-all; }   /* Thread ID */
+
 td {
     word-break: break-word;
-    max-width: 250px;
 }
 
 td a {
@@ -221,11 +231,6 @@ tr {
             <i data-lucide="bar-chart"></i>
             Go to Reports
         </button>
-
-        <button onclick="goDashboard()">
-            <i data-lucide="home"></i>
-            Go to Dashboard
-        </button>
     </div>
 </div>
 
@@ -242,13 +247,12 @@ tr {
 <th>Confidence</th>
 <th>URLs</th>
 <th>Thread ID</th>
-<th>Message ID</th>
 </tr>
 </thead>
 
 <tbody id="resultsTable">
 <tr>
-<td colspan="10" class="center">Loading...</td>
+<td colspan="9" class="center">Loading...</td>
 </tr>
 </tbody>
 </table>
@@ -265,6 +269,28 @@ function safeParseJSON(value, fallback) {
     } catch (e) {
         return fallback;
     }
+}
+
+let latestBackendCount = 0;
+
+function getEmailDedupKey(email) {
+    const messageId = String(getEmailField(email, ['Message_ID', 'Message ID', 'MessageId', 'msgId', 'message_id']) || '').trim().toLowerCase();
+    const date = getEmailField(email, ['Date', 'Email Date']) || '';
+    const sender = getEmailField(email, ['From', 'Sender', 'Email From']) || '';
+    const subject = getEmailField(email, ['Subject', 'Email Subject']) || '';
+    if (messageId) return `msgid:${messageId}`;
+    return normalizeEmailKey([date, sender, subject]);
+}
+
+function dedupeEmails(emails) {
+    const seen = new Set();
+    return (Array.isArray(emails) ? emails : []).filter(email => {
+        const key = getEmailDedupKey(email);
+        if (!key) return false;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
 }
 
 function setTotalCount() {
@@ -482,6 +508,7 @@ function updateActualLabel(emailKey, value) {
     updateCachedActualLabel(emailKey, normalizedValue);
     localStorage.setItem('emailAnalysisResults', JSON.stringify(currentResults));
     renderTable(currentResults);
+    saveSnapshot();
     updateLabelCounter();
     logActivity("Updated actual email label");
 }
@@ -876,9 +903,10 @@ function updateLabelCounter() {
 
 function loadCachedOrTestData() {
     console.log('[CACHE] Checking for cached email results...');
-    const cached = getAllEmailAnalysisResults();
+    const cached = dedupeEmails(getAllEmailAnalysisResults());
     if (cached && cached.length > 0) {
-        console.log('[CACHE] Found', cached.length, 'cached records');
+        console.log('[CACHE] Found', cached.length, 'cached records after dedupe');
+        latestBackendCount = cached.length;
         currentResults = cached.slice(0, MAX_EMAILS_TO_SHOW);
         /* Apply ONLY user-set labels — strips any backend Actual_Label */
         currentResults = applyOnlyUserLabels(currentResults);
@@ -904,34 +932,36 @@ function loadCachedOrTestData() {
 
 // ✅ HANDLE DATA
 function handleData(data) {
-    const raw = extractEmailResults(data).slice(0, MAX_EMAILS_TO_SHOW);
-    console.log('[HANDLE] Fresh backend data: total:', raw.length,
-        '| backend Actual_Label count (stripped):', raw.filter(e=>e.Actual_Label).length);
+    const backendEmails = dedupeEmails(extractEmailResults(data));
+    latestBackendCount = backendEmails.length;
+    currentResults = backendEmails.slice(0, MAX_EMAILS_TO_SHOW);
+    console.log('[HANDLE] Fresh backend data: returned=', backendEmails.length,
+        '| displayed=', currentResults.length,
+        '| backend Actual_Label count (stripped):', backendEmails.filter(e=>e.Actual_Label).length);
     /* Strip any Actual_Label from backend — user is the only source of truth */
-    currentResults = applyOnlyUserLabels(raw);
+    currentResults = applyOnlyUserLabels(currentResults);
     console.log('[HANDLE] After applyOnlyUserLabels:',
         currentResults.filter(e=>e.Actual_Label).length, 'user-labeled |',
         currentResults.filter(e=>!e.Actual_Label).length, 'unknown');
-    data = currentResults;
     const endTime = Date.now();
     const timingMetrics = computeEmailTimingMetrics(scanStartTime, endTime, currentResults.length, data);
     console.log('[TIMING] email-results computed timingMetrics:', timingMetrics);
 
-    const phishingCount = data.filter(e => normalizeCategory(e) === "PHISHING").length;
-    const potentialCount = data.filter(e => normalizeCategory(e) === "POTENTIAL_PHISHING").length;
+    const phishingCount = currentResults.filter(e => normalizeCategory(e) === "PHISHING").length;
+    const potentialCount = currentResults.filter(e => normalizeCategory(e) === "POTENTIAL_PHISHING").length;
     const alertCount = phishingCount + potentialCount;
-    logActivity(`Scanned ${data.length} emails, detected ${alertCount} alerts`);
+    logActivity(`Scanned ${currentResults.length} emails, detected ${alertCount} alerts`);
     clearTimeout(timeoutRef);
 
     syncReportDataFromResults(currentResults);
+    saveSnapshot();
     saveEmailSessionTiming(timingMetrics);
-    const totalCount = Number(data.totalCount || data.total_count || currentResults.length || 0);
-    document.getElementById("totalCount").innerText = totalCount;
+    document.getElementById("totalCount").innerText = currentResults.length;
 
-    if (data.length > lastCount) {
-        logActivity(`New emails detected: +${data.length - lastCount}`);
+    if (currentResults.length > lastCount) {
+        logActivity(`New emails detected: +${currentResults.length - lastCount}`);
     }
-    lastCount = data.length;
+    lastCount = currentResults.length;
 
     const table = document.getElementById("resultsTable");
 
@@ -1026,10 +1056,41 @@ function renderTable(data) {
             <td>${escapeHtml(email.Confidence || "-")}</td>
             <td>${formatUrls(email.URLs)}</td>
             <td>${escapeHtml(email.Thread_ID || "-")}</td>
-            <td>${escapeHtml(email.Message_ID || "-")}</td>
         </tr>
         `;
     });
+}
+
+/* ── SNAPSHOT ──────────────────────────────────────────────────────
+   Write a clean, simple copy of exactly what is shown in the table
+   to a dedicated key. Reports.html reads ONLY this key, so it always
+   matches what the user sees here regardless of Google Sheets state. */
+function saveSnapshot() {
+    if (!Array.isArray(currentResults) || currentResults.length === 0) return;
+    const snap = {
+        savedAt: Date.now(),
+        backendCount: latestBackendCount || currentResults.length,
+        displayCount: currentResults.length,
+        emails: currentResults.map(email => {
+            const cat = normalizeCategory(email);
+            const actualLabel = getActualLabel(email) || '';
+            /* Use the same display text that renderTable shows */
+            const catLabel = email.Category_Label || email.Category ||
+                (cat === 'PHISHING' ? 'Phishing' :
+                 cat === 'POTENTIAL_PHISHING' ? 'Potential Phishing' : 'Safe');
+            return {
+                from:          email.From    || '-',
+                subject:       email.Subject || '-',
+                date:          email.Date    || '-',
+                category:      cat,          /* 'PHISHING' | 'POTENTIAL_PHISHING' | 'SAFE' */
+                categoryLabel: catLabel,     /* text shown in table Category column */
+                actualLabel:   actualLabel   /* user's dropdown selection or '' */
+            };
+        })
+    };
+    localStorage.setItem('securetrace_snapshot', JSON.stringify(snap));
+    console.log('[SNAP] saved', snap.emails.length, 'emails to securetrace_snapshot',
+        '| backendCount=', snap.backendCount, '| displayCount=', snap.displayCount);
 }
 
 // 🔗 FORMAT URLS (clean + clickable)
@@ -1078,7 +1139,7 @@ function showError(message) {
 
     table.innerHTML = `
         <tr>
-            <td colspan="10" class="center" style="color:red;">
+            <td colspan="9" class="center" style="color:red;">
                 ${message}
             </td>
         </tr>
@@ -1114,19 +1175,25 @@ function persistCurrentLabels() {
 }
 
 function goReports() {
+    saveSnapshot(); /* always write fresh snapshot before navigating */
+    /* Save every current email to localStorage with _category stamped.
+       syncReportDataFromResults uses email-results.html's own normalizeCategory
+       (reads specific named fields only, no keyword scanning) so the value is
+       exactly what the user sees in this table.  persistCurrentLabels also
+       runs inside sync to flush Actual_Label selections. */
+    if (Array.isArray(currentResults) && currentResults.length > 0) {
+        syncReportDataFromResults(currentResults);
+    }
     persistCurrentLabels();
     const labeled = currentResults.filter(e => normalizeActualLabel(e.Actual_Label) !== '');
     if (labeled.length > 0) {
         localStorage.setItem('autoRunEval', '1');
     }
+    /* Signal that fresh data is waiting — reports.html will skip its
+       Google Sheets auto-fetch and read directly from localStorage. */
+    sessionStorage.setItem('securetrace_from_results', Date.now().toString());
     logActivity("Navigated to reports page");
     window.open("reports.html", "_top");
-}
-
-function goDashboard() {
-    persistCurrentLabels();
-    logActivity("Navigated to dashboard");
-    window.open("dashboard.html", "_top");
 }
 
 // Initial load

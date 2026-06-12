@@ -278,10 +278,10 @@ body { display: flex; background: #f5f7fb; min-height: 100vh; }
     </div>
     <div class="menu">
         <a href="dashboard.html"><i data-lucide="home"></i> Dashboard</a>
-        <a href="email.html"><i data-lucide="mail"></i> Email Filtering</a>
+        <a href="email.html"><i data-lucide="mail"></i> Email Prediction</a>
         <a href="#"><i data-lucide="activity"></i> Transaction Analysis</a>
         <a href="activity-log.html"><i data-lucide="file-text"></i> Activity Log</a>
-        <a href="#" class="active"><i data-lucide="bar-chart"></i> Reports</a>
+        <a href="reports.html" class="active"><i data-lucide="bar-chart"></i> Reports</a>
     </div>
 </div>
 
@@ -435,6 +435,7 @@ const DEFAULT_BATCH_SIZE = 20;
 let pieChart = null, barChart = null, pdfPieChart = null, pdfBarChart = null;
 let reportResults = [], latestScannedCount = 0;
 let reportLoading = false, reportTimeoutRef = null, reportLoadStartTime = 0;
+let evalHasRun = false;
 
 /* ── Utility ── */
 function safeDivide(n, d) { return d > 0 ? n / d : 0; }
@@ -757,14 +758,23 @@ function getStatusLabel(email) {
     if (cat==='POTENTIAL_PHISHING') return 'Potential Phishing';
     return 'Safe';
 }
-/* getDisplayStatus: reads ONLY from actualEmailLabels (the user-set store).
-   Never touches email.Actual_Label — that field may have been stamped from
-   the model's Category by old code and must not drive charts.
-   Unlabeled emails are shown as Safe. */
+/* getDisplayStatus: shows the user's actual label if set, otherwise uses
+   _category (stamped by email-results.html at scan time) so the recent
+   analysis table shows exactly what the user saw in the Email Results page. */
 function getDisplayStatus(email) {
-    const actual = getStoredActualLabel(email); /* reads actualEmailLabels only */
+    const actual = getStoredActualLabel(email);
     if (actual === 'PHISHING') return 'Phishing';
     if (actual === 'POTENTIAL_PHISHING') return 'Potential Phishing';
+    if (actual === 'SAFE') return 'Safe';
+    /* Use _category first — it was set by email-results.html's classifier */
+    const cat = email._category;
+    if (cat === 'PHISHING') return 'Phishing';
+    if (cat === 'POTENTIAL_PHISHING') return 'Potential Phishing';
+    if (cat === 'SAFE') return 'Safe';
+    /* Last resort: read specific named fields only (no keyword scanning) */
+    const rawCat = String(getEmailField(email, ['Category_Label','Category Label','Prediction_Label','Prediction Label','Category','Prediction','Predicted_Label','Predicted']) || '').toLowerCase();
+    if (rawCat.includes('potential')) return 'Potential Phishing';
+    if (rawCat.includes('phish')) return 'Phishing';
     return 'Safe';
 }
 function getRecordTime(record) {
@@ -780,14 +790,41 @@ function getAllEmailAnalysisResults() {
 function getEmailAnalysisResults() {
     return getAllEmailAnalysisResults().slice(0,SESSION_METRICS_LIMIT).map(applyStoredActualLabel);
 }
+/* ── SNAPSHOT reader ──────────────────────────────────────────────
+   securetrace_snapshot is written by email-results.html with exactly
+   what is rendered in the table. It is the single source of truth
+   for the pie chart and recent analysis — nothing in reports.html
+   should re-derive or reinterpret the categories. */
+function getSnapshot() {
+    try {
+        const raw = localStorage.getItem('securetrace_snapshot');
+        if (!raw) return null;
+        const snap = JSON.parse(raw);
+        if (snap && Array.isArray(snap.emails) && snap.emails.length > 0) return snap;
+    } catch(e) {}
+    return null;
+}
+
 function getThreatSummary() {
+    /* Primary source: clean snapshot written by email-results.html */
+    const snap = getSnapshot();
+    if (snap) {
+        const phishing  = snap.emails.filter(e => e.category === 'PHISHING').length;
+        const potential = snap.emails.filter(e => e.category === 'POTENTIAL_PHISHING').length;
+        const total     = snap.emails.length;
+        return { total, phishing, potential, safe: Math.max(0, total - phishing - potential) };
+    }
+    /* Fallback when snapshot not available: read _category from emailAnalysisResults */
     const records = getAllEmailAnalysisResults();
-    /* Pie chart counts ONLY from actualEmailLabels (user-confirmed labels).
-       Never reads email.Actual_Label — it may be corrupted with model data.
-       Unlabeled emails count as Safe. Model predictions are for the
-       confusion matrix only. */
-    const phishing  = records.filter(r => getStoredActualLabel(r) === 'PHISHING').length;
-    const potential = records.filter(r => getStoredActualLabel(r) === 'POTENTIAL_PHISHING').length;
+    const getCategory = (r) => {
+        if (r._category) return r._category;
+        const cat = String(getEmailField(r, ['Category_Label','Category Label','Category','Prediction']) || '').toLowerCase();
+        if (cat.includes('potential')) return 'POTENTIAL_PHISHING';
+        if (cat.includes('phish'))     return 'PHISHING';
+        return 'SAFE';
+    };
+    const phishing  = records.filter(r => getCategory(r) === 'PHISHING').length;
+    const potential = records.filter(r => getCategory(r) === 'POTENTIAL_PHISHING').length;
     return { total: records.length, phishing, potential, safe: Math.max(0, records.length - phishing - potential) };
 }
 function syncStatsFromEmailResults() {
@@ -818,17 +855,45 @@ function cleanRecentAnalysisRecords(records) {
     }).slice(0,10);
 }
 function buildRecentAnalysisFromEmailResults() {
-    return cleanRecentAnalysisRecords(
-        getAllEmailAnalysisResults()
-            .filter(r=>r&&typeof r==='object')
-            .sort((a,b)=>getRecordTime(b)-getRecordTime(a))
-            .slice(0,10)
-            .map(email=>({
-                date: getEmailField(email,['Date','date','Email Date','Created At'])||'-',
-                sender: getEmailField(email,['From','Sender','Email From','from'])||'-',
-                subject: getEmailField(email,['Subject','Email Subject','subject'])||'-',
-                status: getDisplayStatus(email)
+    /* Primary: read from the clean snapshot written by email-results.html.
+       snapshot.emails are already in display order (newest-first from the
+       sort that email-results.html applied). The category and actualLabel
+       are exactly what the user sees in the email-results table — no
+       re-derivation needed here. */
+    const snap = getSnapshot();
+    if (snap) {
+        return cleanRecentAnalysisRecords(
+            snap.emails.slice(0, 10).map(e => ({
+                date:   e.date,
+                sender: e.from,
+                subject: e.subject,
+                status: (() => {
+                    /* Actual label (user's dropdown) takes priority */
+                    const a = e.actualLabel;
+                    if (a === 'PHISHING')          return 'Phishing';
+                    if (a === 'POTENTIAL_PHISHING') return 'Potential Phishing';
+                    if (a === 'SAFE')               return 'Safe';
+                    /* Fall back to model prediction */
+                    if (e.category === 'PHISHING')          return 'Phishing';
+                    if (e.category === 'POTENTIAL_PHISHING') return 'Potential Phishing';
+                    return 'Safe';
+                })()
             }))
+        );
+    }
+    /* Fallback when snapshot not yet available */
+    const all = getAllEmailAnalysisResults().filter(r=>r&&typeof r==='object');
+    const hasTimestamps = all.some(r => getRecordTime(r) > 0);
+    const ordered = hasTimestamps
+        ? [...all].sort((a,b) => getRecordTime(b) - getRecordTime(a))
+        : all;
+    return cleanRecentAnalysisRecords(
+        ordered.slice(0,10).map(email=>({
+            date:   getEmailField(email,['Date','date','Email Date','Created At'])||'-',
+            sender: getEmailField(email,['From','Sender','Email From','from'])||'-',
+            subject: getEmailField(email,['Subject','Email Subject','subject'])||'-',
+            status: getDisplayStatus(email)
+        }))
     );
 }
 function getRecentAnalysis() {
@@ -1015,8 +1080,18 @@ function handleReportResults(data) {
             cat = normalizeCategoryValue(rawVal);
         }
 
-        /* 3b. Keyword-scan fallback */
-        if (!cat) cat = derivePrediction(withLabel);
+        /* 3b. Simple named-field fallback — same logic as email-results.html's
+              normalizeCategory. Never use derivePrediction here because its
+              broad keyword scan (risk=medium → POTENTIAL_PHISHING, etc.) gives
+              false positives that contradict what the user sees on the results page. */
+        if (!cat) {
+            const rawLabel = String(getEmailField(withLabel, [
+                'Category_Label','Category Label','Prediction_Label','Prediction Label','Label','Status'
+            ]) || '').toLowerCase();
+            if (rawLabel.includes('potential')) cat = 'POTENTIAL_PHISHING';
+            else if (rawLabel.includes('phish')) cat = 'PHISHING';
+            else if (rawLabel.length > 0)        cat = 'SAFE';
+        }
 
         return cat ? { ...withLabel, _category: cat } : withLabel;
     });
@@ -1312,6 +1387,7 @@ function runEvaluation() {
     renderEvalTable(batches);
     renderEvalSummary(batches);
     renderPerfChart(batches);
+    evalHasRun = true;
 }
 
 function renderEvalTable(batches) {
@@ -1544,7 +1620,7 @@ function snapshotLabelsAndPreds() {
 window.onload = function () {
     initActualLabels();
     stripCorruptedActualLabels(); /* remove model-derived Actual_Label from cached records */
-    snapshotLabelsAndPreds();    /* ← must run BEFORE loadReportResults wipes records */
+    snapshotLabelsAndPreds();
     resetProjectCountsOnce();
     mergeActualLabelsFromUrl();
     initStats();
@@ -1552,12 +1628,37 @@ window.onload = function () {
     initCharts();
     renderAnalysisTable();
     logActivity("Visited reports page");
-    loadReportResults();
+
+    /* If the user arrived from the Email Results page, the data in
+       emailAnalysisResults is already fresh and has _category stamped
+       by email-results.html's own classifier (the authoritative source).
+       Skip the Google Sheets auto-fetch entirely so nothing overwrites it.
+       The "Sync Latest Results" button is always available for a manual refresh. */
+    const fromResults = sessionStorage.getItem('securetrace_from_results');
+    if (!fromResults) {
+        /* First visit (not from email-results page) — fetch from Google Sheets
+           only if there is nothing cached yet. */
+        const cached = getAllEmailAnalysisResults();
+        if (cached.length === 0) {
+            loadReportResults();
+        }
+    }
+    /* Clear the flag so a page-reload doesn't skip the fetch permanently */
+    sessionStorage.removeItem('securetrace_from_results');
+
     refreshAnalysis();
-    window.addEventListener('storage', refreshAnalysis);
-    window.addEventListener('focus', () => {
-        if (!reportLoading) loadReportResults();
+    window.addEventListener('storage', function(e) {
+        refreshAnalysis();
+        /* Auto-re-run evaluation when actual labels or email results change,
+           so TP/TN/FP/FN update in real-time as the user sets labels in
+           the Email Results page (works across browser tabs via storage events). */
+        if (evalHasRun && e && (e.key === 'actualEmailLabels' || e.key === 'emailAnalysisResults')) {
+            snapshotLabelsAndPreds();
+            runEvaluation();
+        }
     });
+    /* Removed focus → loadReportResults() — that was overwriting _category
+       on every tab-switch with fresh Google Sheets data that had no _category. */
 
     /* Auto-run evaluation when returning from the Email Results page.
        Poll until the live sync has finished so runEvaluation sees the
