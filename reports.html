@@ -370,16 +370,16 @@ body { display: flex; background: #f5f7fb; min-height: 100vh; }
 
         <!-- Summary strip (shown after run) -->
         <div class="eval-summary" id="evalSummary">
-            <div class="eval-summary-card"><div class="val" id="sumBatches">—</div><div class="lbl">Batches</div></div>
-            <div class="eval-summary-card"><div class="val" id="sumAccuracy">—</div><div class="lbl">Accuracy</div></div>
-            <div class="eval-summary-card"><div class="val" id="sumPrecision">—</div><div class="lbl">Avg Precision</div></div>
-            <div class="eval-summary-card"><div class="val" id="sumRecall">—</div><div class="lbl">Avg Recall</div></div>
-            <div class="eval-summary-card"><div class="val" id="sumF1">—</div><div class="lbl">Avg F1-Score</div></div>
+            <div class="eval-summary-card"><div class="val" id="sumBatches">—</div><div class="lbl" id="lblBatches">Batches</div></div>
+            <div class="eval-summary-card"><div class="val" id="sumAccuracy">—</div><div class="lbl" id="lblAccuracy">Accuracy</div></div>
+            <div class="eval-summary-card"><div class="val" id="sumPrecision">—</div><div class="lbl" id="lblPrecision">Avg Precision</div></div>
+            <div class="eval-summary-card"><div class="val" id="sumRecall">—</div><div class="lbl" id="lblRecall">Avg Recall</div></div>
+            <div class="eval-summary-card"><div class="val" id="sumF1">—</div><div class="lbl" id="lblF1">Avg F1-Score</div></div>
         </div>
 
         <!-- Batch results table (shown after run) -->
         <div class="eval-results" id="evalResults">
-            <div class="card-title" style="margin-top:20px;">Perfoermance Report</div>
+            <div class="card-title" style="margin-top:20px;">Performance Report</div>
             <div class="eval-table-wrap">
                 <table class="eval-table">
                     <thead>
@@ -916,8 +916,57 @@ function saveRecentAnalysis(records) { localStorage.setItem('recentAnalysis',JSO
 function syncRecentAnalysisFromResults(results) {
     saveRecentAnalysis(cleanRecentAnalysisRecords(
         [...results].sort((a,b)=>getRecordTime(b)-getRecordTime(a)).slice(0,10)
-            .map(email=>({date:email.Date||'-',sender:email.From||'-',subject:email.Subject||'-',status:getDisplayStatus(email)}))
+            .map(email=>({
+                date:    getEmailField(email,['Date','Email Date','date'])||'-',
+                sender:  getEmailField(email,['From','Sender','Email From','from'])||'-',
+                subject: getEmailField(email,['Subject','Email Subject','subject'])||'-',
+                status:  getDisplayStatus(email)
+            }))
     ));
+}
+
+/* ── regenerateSnapshot ──────────────────────────────────────────────
+   Rebuilds securetrace_snapshot from a set of email records.
+   Called after every live-sync so getThreatSummary() and
+   buildRecentAnalysisFromEmailResults() always see current data,
+   not stale data from the last time email-results.html was open.
+─────────────────────────────────────────────────────────────────── */
+function regenerateSnapshot(emails) {
+    if (!Array.isArray(emails) || emails.length === 0) return;
+    const snap = {
+        savedAt:       Date.now(),
+        backendCount:  emails.length,
+        displayCount:  emails.length,
+        emails: emails.map(email => {
+            /* Use _category if already resolved; otherwise derive from raw fields */
+            const cat = email._category || (() => {
+                const raw = String(getEmailField(email,[
+                    'Category_Label','Category Label','Prediction_Label','Prediction Label',
+                    'Category','Prediction','Predicted_Label','Predicted Label',
+                    'Category_Name','CategoryName','Result','Classification'
+                ])||'').toLowerCase();
+                if (raw.includes('potential')) return 'POTENTIAL_PHISHING';
+                if (raw.includes('phish'))     return 'PHISHING';
+                if (raw.length > 0)            return 'SAFE';
+                return 'SAFE';
+            })();
+            const actualLabel = getStoredActualLabel(email) || normalizeActualLabel(email.Actual_Label) || '';
+            const catLabel = getEmailField(email,['Category_Label','Category Label']) ||
+                (cat==='PHISHING' ? 'Phishing' : cat==='POTENTIAL_PHISHING' ? 'Potential Phishing' : 'Safe');
+            return {
+                from:          getEmailField(email,['From','Sender','Email From','from']) || '-',
+                subject:       getEmailField(email,['Subject','Email Subject','subject']) || '-',
+                date:          getEmailField(email,['Date','Email Date','date']) || '-',
+                category:      cat,
+                categoryLabel: catLabel,
+                actualLabel:   actualLabel
+            };
+        })
+    };
+    localStorage.setItem('securetrace_snapshot', JSON.stringify(snap));
+    console.log('[SNAP] regenerateSnapshot: saved', snap.emails.length, 'emails | phishing=',
+        snap.emails.filter(e=>e.category==='PHISHING').length,
+        '| potential=', snap.emails.filter(e=>e.category==='POTENTIAL_PHISHING').length);
 }
 
 /* ── Charts ── */
@@ -1009,10 +1058,13 @@ async function loadReportResults() {
         if (cached.length > 0) {
             reportResults = cached.map(applyStoredActualLabel).slice(0, MAX_EMAILS_TO_SHOW);
             localStorage.setItem('emailAnalysisResults', JSON.stringify(reportResults));
+            /* Regenerate snapshot so charts/table reflect cached data correctly */
+            regenerateSnapshot(reportResults);
             syncRecentAnalysisFromResults(reportResults);
             setSyncStatus('Live sync unavailable, showing saved results.');
             latestScannedCount = cached.length;
             refreshAnalysis();
+            runEvaluation();
         } else {
             reportResults = [];
             setSyncStatus('Unable to sync email scan results. No saved data available.');
@@ -1099,14 +1151,19 @@ function handleReportResults(data) {
     if (labeled.length > 0) {
         localStorage.setItem('emailAnalysisResults', JSON.stringify(labeled));
         _ensureLabelsAfterSave(labeled);
+        /* Regenerate snapshot from fresh data so pie chart + recent analysis
+           immediately reflect the live sync — not the stale previous snapshot. */
+        regenerateSnapshot(labeled);
         reportResults = labeled.slice(0, MAX_EMAILS_TO_SHOW);
         syncRecentAnalysisFromResults(reportResults);
     } else {
         reportResults = getAllEmailAnalysisResults().slice(0, MAX_EMAILS_TO_SHOW);
+        regenerateSnapshot(reportResults);
     }
     latestScannedCount = Number(data?.scanned || raw.length || 0);
     setSyncStatus(`Last sync: ${new Date().toLocaleTimeString()} | ${reportResults.length} emails displayed (${raw.length} total)`);
     refreshAnalysis();
+    runEvaluation();
 }
 
 /* ── PDF ── */
@@ -1247,6 +1304,45 @@ function f1Badge(f1) {
     return `<span class="badge badge-red">${pct}%</span>`;
 }
 
+/* ── Model-output summary (used when no actual labels are available) ── */
+function renderModelOutputSummary(emails) {
+    const n = emails.length;
+    if (n === 0) return;
+    const phishing  = emails.filter(e => e._predCategory === 'PHISHING').length;
+    const potential = emails.filter(e => e._predCategory === 'POTENTIAL_PHISHING').length;
+    const safe      = emails.filter(e => e._predCategory === 'SAFE').length;
+    const detectionRate = ((phishing + potential) / n * 100).toFixed(1);
+    const phishingRate  = (phishing  / n * 100).toFixed(1);
+    const potentialRate = (potential / n * 100).toFixed(1);
+    const safeRate      = (safe      / n * 100).toFixed(1);
+
+    setText('lblBatches',  'Emails Scanned');
+    setText('lblAccuracy', 'Detection Rate');
+    setText('lblPrecision','Phishing');
+    setText('lblRecall',   'Potential');
+    setText('lblF1',       'Safe');
+
+    setText('sumBatches',   n);
+    setText('sumAccuracy',  `${detectionRate}%`);
+    setText('sumPrecision', `${phishingRate}%`);
+    setText('sumRecall',    `${potentialRate}%`);
+    setText('sumF1',        `${safeRate}%`);
+
+    document.getElementById('evalSummary').classList.add('visible');
+    /* Hide batch table — not applicable in model-output mode */
+    document.getElementById('evalResults').classList.remove('visible');
+    const perfCard = document.getElementById('perfCard');
+    if (perfCard) perfCard.style.display = 'none';
+}
+
+function resetSummaryLabels() {
+    setText('lblBatches',  'Batches');
+    setText('lblAccuracy', 'Accuracy');
+    setText('lblPrecision','Avg Precision');
+    setText('lblRecall',   'Avg Recall');
+    setText('lblF1',       'Avg F1-Score');
+}
+
 function runEvaluation() {
     const errEl  = document.getElementById('evalError');
     const noteEl = document.getElementById('evalSessionNote');
@@ -1342,17 +1438,21 @@ function runEvaluation() {
     const safeLabels     = userLabeledArr.filter(e => normalizeActualLabel(e.Actual_Label) === 'SAFE');
 
     if (userLabeledArr.length === 0) {
+        /* No actual labels yet — show model-prediction-based metrics so the
+           section is never blank.  Full accuracy/precision/recall/F1 become
+           available once the user assigns Actual Labels on the Email Results page. */
         if (noteEl) noteEl.innerHTML =
-            `${totalEmails} emails loaded | 0 labeled — go to ` +
-            `<a href="email-results.html" style="color:#2b6cff;font-weight:600;text-decoration:underline;">Email Results</a>` +
-            ` and set <strong>Actual Labels</strong> first.`;
-        errEl.innerHTML =
-            'No labeled emails found. Assign <a href="email-results.html"' +
-            ' style="color:#2b6cff;font-weight:600;text-decoration:underline;">Actual Labels</a>' +
-            ' on the Email Results page first.';
-        errEl.style.display = 'inline';
+            `${totalEmails} emails scanned | 0 manually labeled — ` +
+            `<a href="email-results.html" style="color:#2b6cff;font-weight:600;text-decoration:underline;">assign Actual Labels</a>` +
+            ` in Email Results to unlock full accuracy metrics.`;
+        errEl.style.display = 'none';
+        renderModelOutputSummary(withFreshPred);
+        evalHasRun = true;
         return;
     }
+
+    /* Full evaluation path — reset card labels to evaluation mode */
+    resetSummaryLabels();
 
     /* ── Step 5: Default every unlabeled email to SAFE so all emails land
        in exactly one confusion-matrix cell and Samples = TP+FP+TN+FN. ── */
@@ -1641,12 +1741,29 @@ window.onload = function () {
         const cached = getAllEmailAnalysisResults();
         if (cached.length === 0) {
             loadReportResults();
+        } else {
+            /* We have cached data but no live sync. Ensure the snapshot is
+               up-to-date so the charts/table immediately show correct data. */
+            const existingSnap = getSnapshot();
+            if (!existingSnap || existingSnap.emails.length !== cached.length) {
+                regenerateSnapshot(cached.map(applyStoredActualLabel));
+            }
         }
     }
     /* Clear the flag so a page-reload doesn't skip the fetch permanently */
     sessionStorage.removeItem('securetrace_from_results');
 
     refreshAnalysis();
+
+    /* Auto-compute performance metrics immediately from whatever data is
+       available — no manual button click required. When actual labels are
+       present the full accuracy/precision/recall/F1 table is shown;
+       otherwise model-output metrics (detection rate, phishing %, safe %)
+       are displayed so the section never stays blank. */
+    const _cachedForEval = getAllEmailAnalysisResults();
+    if (_cachedForEval.length > 0) {
+        runEvaluation();
+    }
     window.addEventListener('storage', function(e) {
         refreshAnalysis();
         /* Auto-re-run evaluation when actual labels or email results change,
