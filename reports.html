@@ -418,6 +418,37 @@ body { display: flex; background: #f5f7fb; min-height: 100vh; }
         </div>
     </div>
 
+    <!-- ── Detailed Performance Metrics ── -->
+    <div class="card no-print" id="detailedMetricsCard" style="display:none; margin-top:20px;">
+        <div class="card-title">Detailed Performance Metrics</div>
+        <div class="eval-base-grid" style="grid-template-columns: repeat(3, 1fr); gap: 14px;">
+            <div class="eval-base-card">
+                <div class="val" id="metricPPA">—</div>
+                <div class="lbl" title="(TP + TN) / (TP + TN + FP + FN) × 100">PPA — Phishing Prediction Accuracy</div>
+            </div>
+            <div class="eval-base-card">
+                <div class="val" id="metricLEPR">—</div>
+                <div class="lbl" title="TN / (TN + FP) × 100">LEPR — Legitimate Email Preservation Rate</div>
+            </div>
+            <div class="eval-base-card">
+                <div class="val" id="metricPPP">—</div>
+                <div class="lbl" title="TP / (TP + FP) × 100">PPP — Phishing Prediction Precision</div>
+            </div>
+            <div class="eval-base-card">
+                <div class="val" id="metricPDRR">—</div>
+                <div class="lbl" title="TP / (TP + FN) × 100">PDRR — Phishing Detection Recall Rate</div>
+            </div>
+            <div class="eval-base-card">
+                <div class="val" id="metricPRT">—</div>
+                <div class="lbl" title="Total Prediction Time / Number of Emails">PRT — Avg Prediction Response Time</div>
+            </div>
+            <div class="eval-base-card">
+                <div class="val" id="metricST">—</div>
+                <div class="lbl" title="Total Emails Processed / Processing Time">ST — System Throughput</div>
+            </div>
+        </div>
+    </div>
+
     </div><!-- /.no-print -->
 
 </div><!-- /.main -->
@@ -436,6 +467,7 @@ let pieChart = null, barChart = null, pdfPieChart = null, pdfBarChart = null;
 let reportResults = [], latestScannedCount = 0;
 let reportLoading = false, reportTimeoutRef = null, reportLoadStartTime = 0;
 let evalHasRun = false;
+let evalRunStartTime = 0; /* tracks when runEvaluation() begins */
 
 /* ── Utility ── */
 function safeDivide(n, d) { return d > 0 ? n / d : 0; }
@@ -516,16 +548,7 @@ function stripCorruptedActualLabels() {
 
 /* Manual reset — called by the "Reset Labels" button in the UI */
 function resetLabelStore() {
-    if (!confirm(
-        'This clears ALL cached labels — the pie chart, Recent Analysis table, ' +
-        'AND the batch evaluator (TP/FP/TN/FN).\n\n' +
-        'After clearing:\n' +
-        '  1. Go to Email Results and re-label your phishing emails.\n' +
-        '  2. Return here and click "Run Evaluation".\n\n' +
-        'Your email data in Google Sheets is NOT affected. Continue?'
-    )) return;
-
-    /* Clear display labels */
+    /* Clear labels immediately — no confirm dialog, no page refresh */
     localStorage.setItem('actualEmailLabels', JSON.stringify({}));
     window.actualEmailLabels = {};
 
@@ -542,13 +565,38 @@ function resetLabelStore() {
 
     localStorage.setItem('_labelStoreVersion', String(LABEL_STORE_VERSION));
     console.log('[SECURETRACE] Label store + eval snapshots manually reset.');
+
+    /* Clear eval UI panels immediately — no page refresh needed */
+    const _es = document.getElementById('evalSummary');
+    if (_es) _es.classList.remove('visible');
+    const _er = document.getElementById('evalResults');
+    if (_er) _er.classList.remove('visible');
+    const _dm = document.getElementById('detailedMetricsCard');
+    if (_dm) _dm.style.display = 'none';
+    const _pc = document.getElementById('perfCard');
+    if (_pc) _pc.style.display = 'none';
+    const _tb = document.getElementById('evalTableBody');
+    if (_tb) _tb.innerHTML = '';
+    const _tf = document.getElementById('evalTableFoot');
+    if (_tf) _tf.innerHTML = '';
+    evalHasRun = false;
+
     refreshAnalysis();
-    alert(
-        'Labels cleared.\n\n' +
-        'Next steps:\n' +
-        '1. Go to Email Results → label phishing emails as "Phishing".\n' +
-        '2. Return here → click "Run Evaluation" to see updated TP/FP/TN/FN.'
-    );
+
+    /* Inline feedback on the button — no blocking alert */
+    const btn = document.querySelector('button[onclick="resetLabelStore()"]');
+    if (btn) {
+        const origHtml = btn.innerHTML;
+        const origBg   = btn.style.background;
+        btn.innerHTML  = '<i data-lucide="check"></i> Labels Cleared';
+        btn.style.background = '#38a169';
+        lucide.createIcons();
+        setTimeout(() => {
+            btn.innerHTML      = origHtml;
+            btn.style.background = origBg;
+            lucide.createIcons();
+        }, 3000);
+    }
 }
 function getStats() {
     let s = JSON.parse(localStorage.getItem("stats"));
@@ -728,21 +776,23 @@ function normalizeCategoryValue(val) {
     if (val === null || val === undefined || val === '') return null;
     const v = String(val).trim().toLowerCase().replace(/[_\-\s]+/g, ' ');
 
-    /* ── Definite PHISHING ── */
-    if (v === '1' || v === 'true' || v === 'yes' || v === 'phishing' ||
-        v === 'phishing detected' || v === 'phishing email' || v === 'detected' ||
+    /* ── POTENTIAL first (must check before plain phishing) ── */
+    if (v.includes('potential phish') || v.includes('potential_phish')) return 'POTENTIAL_PHISHING';
+    if (v === 'potential' || v === 'suspicious' || v === 'suspect' ||
+        v === 'medium' || v === 'medium risk' || v === 'moderate' ||
+        v === 'warning' || v === 'flagged')
+        return 'POTENTIAL_PHISHING';
+
+    /* ── PHISHING — use includes() to catch variants like 'Phish', 'Phishing Email (High Risk)' ── */
+    if (v.includes('phish') && !v.includes('not phish') && !v.includes('no phish'))
+        return 'PHISHING';
+    if (v === '1' || v === 'true' || v === 'yes' || v === 'detected' ||
         v === 'spam' || v === 'malicious' || v === 'fraud' || v === 'scam' ||
         v === 'high' || v === 'high risk' || v === 'highrisk' ||
         v === 'dangerous' || v === 'critical' || v === 'severe' || v === 'alert')
         return 'PHISHING';
 
-    /* ── POTENTIAL / SUSPICIOUS ── */
-    if (v === 'potential phishing' || v === 'potential' || v === 'suspicious' ||
-        v === 'suspect' || v === 'medium' || v === 'medium risk' ||
-        v === 'moderate' || v === 'warning' || v === 'flagged')
-        return 'POTENTIAL_PHISHING';
-
-    /* ── Definite SAFE ── */
+    /* ── SAFE ── */
     if (v === '0' || v === 'false' || v === 'no' || v === 'safe' ||
         v === 'legitimate' || v === 'ham' || v === 'benign' ||
         v === 'low' || v === 'low risk' || v === 'not phishing' ||
@@ -766,15 +816,16 @@ function getDisplayStatus(email) {
     if (actual === 'PHISHING') return 'Phishing';
     if (actual === 'POTENTIAL_PHISHING') return 'Potential Phishing';
     if (actual === 'SAFE') return 'Safe';
-    /* Use _category first — it was set by email-results.html's classifier */
+    /* Read Category_Label / Category raw fields first — same source as email-results.html
+       so the status shown here matches exactly what the user sees in that table. */
+    const rawCat = String(getEmailField(email, ['Category_Label','Category Label','Prediction_Label','Prediction Label','Category','Prediction','Predicted_Label','Predicted']) || '').toLowerCase();
+    if (rawCat.includes('potential')) return 'Potential Phishing';
+    if (rawCat.includes('phish'))     return 'Phishing';
+    if (rawCat.length > 0)            return rawCat.includes('safe') || rawCat.includes('legit') || rawCat.includes('ham') ? 'Safe' : null;
+    /* Fall back to stored _category when raw fields give no clear signal */
     const cat = email._category;
     if (cat === 'PHISHING') return 'Phishing';
     if (cat === 'POTENTIAL_PHISHING') return 'Potential Phishing';
-    if (cat === 'SAFE') return 'Safe';
-    /* Last resort: read specific named fields only (no keyword scanning) */
-    const rawCat = String(getEmailField(email, ['Category_Label','Category Label','Prediction_Label','Prediction Label','Category','Prediction','Predicted_Label','Predicted']) || '').toLowerCase();
-    if (rawCat.includes('potential')) return 'Potential Phishing';
-    if (rawCat.includes('phish')) return 'Phishing';
     return 'Safe';
 }
 function getRecordTime(record) {
@@ -855,44 +906,22 @@ function cleanRecentAnalysisRecords(records) {
     }).slice(0,10);
 }
 function buildRecentAnalysisFromEmailResults() {
-    /* Primary: read from the clean snapshot written by email-results.html.
-       snapshot.emails are already in display order (newest-first from the
-       sort that email-results.html applied). The category and actualLabel
-       are exactly what the user sees in the email-results table — no
-       re-derivation needed here. */
-    const snap = getSnapshot();
-    if (snap) {
-        return cleanRecentAnalysisRecords(
-            snap.emails.slice(0, 10).map(e => ({
-                date:   e.date,
-                sender: e.from,
-                subject: e.subject,
-                status: (() => {
-                    /* Actual label (user's dropdown) takes priority */
-                    const a = e.actualLabel;
-                    if (a === 'PHISHING')          return 'Phishing';
-                    if (a === 'POTENTIAL_PHISHING') return 'Potential Phishing';
-                    if (a === 'SAFE')               return 'Safe';
-                    /* Fall back to model prediction */
-                    if (e.category === 'PHISHING')          return 'Phishing';
-                    if (e.category === 'POTENTIAL_PHISHING') return 'Potential Phishing';
-                    return 'Safe';
-                })()
-            }))
-        );
-    }
-    /* Fallback when snapshot not yet available */
-    const all = getAllEmailAnalysisResults().filter(r=>r&&typeof r==='object');
+    /* Always read live from emailAnalysisResults so the table matches exactly
+       what the user analyzed — no stale snapshot, no hardcoded fallbacks.
+       getDisplayStatus() reads Category_Label directly (same source as the
+       Email Results page) so statuses are always consistent. */
+    const all = getAllEmailAnalysisResults().filter(r => r && typeof r === 'object');
+    if (all.length === 0) return [];
     const hasTimestamps = all.some(r => getRecordTime(r) > 0);
     const ordered = hasTimestamps
-        ? [...all].sort((a,b) => getRecordTime(b) - getRecordTime(a))
+        ? [...all].sort((a, b) => getRecordTime(b) - getRecordTime(a))
         : all;
     return cleanRecentAnalysisRecords(
-        ordered.slice(0,10).map(email=>({
-            date:   getEmailField(email,['Date','date','Email Date','Created At'])||'-',
-            sender: getEmailField(email,['From','Sender','Email From','from'])||'-',
-            subject: getEmailField(email,['Subject','Email Subject','subject'])||'-',
-            status: getDisplayStatus(email)
+        ordered.slice(0, 10).map(email => ({
+            date:    getEmailField(email, ['Date', 'date', 'Email Date', 'Created At']) || '-',
+            sender:  getEmailField(email, ['From', 'Sender', 'Email From', 'from']) || '-',
+            subject: getEmailField(email, ['Subject', 'Email Subject', 'subject']) || '-',
+            status:  getDisplayStatus(email)
         }))
     );
 }
@@ -1343,8 +1372,43 @@ function resetSummaryLabels() {
     setText('lblF1',       'Avg F1-Score');
 }
 
+function renderDetailedMetrics(batches, emailCount, evalDurationMs) {
+    const totTP = batches.reduce((s,b) => s + b.counts.tp, 0);
+    const totFP = batches.reduce((s,b) => s + b.counts.fp, 0);
+    const totTN = batches.reduce((s,b) => s + b.counts.tn, 0);
+    const totFN = batches.reduce((s,b) => s + b.counts.fn, 0);
+    const totN  = totTP + totFP + totTN + totFN;
+
+    const fmt = (num, denom, suffix) =>
+        denom > 0 ? (num / denom * 100).toFixed(1) + '%' : '—';
+
+    const ppa  = fmt(totTP + totTN, totN);
+    const lepr = (totTN + totFP) > 0 ? (totTN / (totTN + totFP) * 100).toFixed(1) + '%' : '—';
+    const ppp  = (totTP + totFP) > 0 ? (totTP / (totTP + totFP) * 100).toFixed(1) + '%' : '—';
+    const pdrr = (totTP + totFN) > 0 ? (totTP / (totTP + totFN) * 100).toFixed(1) + '%' : '—';
+
+    /* PRT = Total Prediction Time / Number of Emails (ms per email) */
+    const prt = (evalDurationMs > 0 && emailCount > 0)
+        ? (evalDurationMs / emailCount).toFixed(2) + ' ms/email' : '—';
+
+    /* ST = Total Emails Processed / Processing Time (emails per second) */
+    const st = (evalDurationMs > 0 && emailCount > 0)
+        ? (emailCount / (evalDurationMs / 1000)).toFixed(1) + ' emails/s' : '—';
+
+    setText('metricPPA',  ppa);
+    setText('metricLEPR', lepr);
+    setText('metricPPP',  ppp);
+    setText('metricPDRR', pdrr);
+    setText('metricPRT',  prt);
+    setText('metricST',   st);
+
+    const card = document.getElementById('detailedMetricsCard');
+    if (card) card.style.display = 'block';
+}
+
 function runEvaluation() {
     const errEl  = document.getElementById('evalError');
+    evalRunStartTime = Date.now();
     const noteEl = document.getElementById('evalSessionNote');
     errEl.style.display = 'none';
     errEl.textContent   = '';
@@ -1487,6 +1551,11 @@ function runEvaluation() {
     renderEvalTable(batches);
     renderEvalSummary(batches);
     renderPerfChart(batches);
+
+    /* Calculate evaluation duration for PRT / ST metrics */
+    const evalDurationMs = Date.now() - evalRunStartTime;
+    renderDetailedMetrics(batches, allEmails.length, evalDurationMs);
+
     evalHasRun = true;
 }
 
