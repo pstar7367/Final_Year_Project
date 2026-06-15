@@ -475,7 +475,7 @@ const MAX_EMAILS_TO_SHOW = 50;
 const DEFAULT_BATCH_SIZE = 20;
 let pieChart = null, barChart = null, pdfPieChart = null, pdfBarChart = null;
 let reportResults = [], latestScannedCount = 0;
-let reportLoading = false, reportTimeoutRef = null, reportLoadStartTime = 0;
+let reportLoading = false, reportTimeoutRef = null, reportLoadStartTime = 0, reportJsonpTimeout = null;
 let evalHasRun = false;
 let evalRunStartTime = 0; /* tracks when runEvaluation() begins */
 
@@ -1116,40 +1116,62 @@ function mergeActualLabelsFromUrl() {
     } catch(e) { console.warn('Unable to merge labels from URL',e); }
     history.replaceState(null,'',window.location.pathname+window.location.search);
 }
-async function loadReportResults() {
+function loadReportResults() {
     if (reportLoading) return;
     reportLoading = true;
     reportLoadStartTime = Date.now();
     setSyncStatus('Syncing latest Gmail scan results...');
 
-    const fetchUrl = `${SCRIPT_URL}?action=scanAndGetResults&sort=newest&t=${Date.now()}`;
+    /* Apps Script returns JSONP (not plain JSON), so we use a script tag
+       exactly like email-results.html does. fetch() cannot consume JSONP. */
+    const oldScript = document.getElementById('reportJsonpScript');
+    if (oldScript) oldScript.remove();
 
-    try {
-        const response = await fetch(fetchUrl, { cache: 'no-store' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        handleReportResults(data);
-    } catch (err) {
-        console.warn('[REPORT] Live sync failed:', err);
-        const cached = getAllEmailAnalysisResults();
-        if (cached.length > 0) {
-            reportResults = cached.map(applyStoredActualLabel).slice(0, MAX_EMAILS_TO_SHOW);
-            localStorage.setItem('emailAnalysisResults', JSON.stringify(reportResults));
-            /* Regenerate snapshot so charts/table reflect cached data correctly */
-            regenerateSnapshot(reportResults);
-            syncRecentAnalysisFromResults(reportResults);
-            setSyncStatus('Live sync unavailable, showing saved results.');
-            latestScannedCount = cached.length;
-            refreshAnalysis();
-            runEvaluation();
-        } else {
-            reportResults = [];
-            setSyncStatus('Unable to sync email scan results. No saved data available.');
-            refreshAnalysis();
-        }
-    } finally {
+    const script = document.createElement('script');
+    script.id = 'reportJsonpScript';
+    script.src = `${SCRIPT_URL}?action=scanAndGetResults&callback=handleReportData&sort=newest&t=${Date.now()}`;
+
+    script.onerror = function () {
+        clearTimeout(reportJsonpTimeout);
         reportLoading = false;
+        console.warn('[REPORT] JSONP call failed, falling back to cached data');
+        loadReportFromCache();
+    };
+
+    reportJsonpTimeout = setTimeout(function () {
+        const s = document.getElementById('reportJsonpScript');
+        if (s) s.remove();
+        reportLoading = false;
+        console.warn('[REPORT] JSONP timeout, falling back to cached data');
+        loadReportFromCache();
+    }, 30000);
+
+    document.body.appendChild(script);
+}
+
+function handleReportData(data) {
+    clearTimeout(reportJsonpTimeout);
+    reportLoading = false;
+    handleReportResults(data);
+}
+
+function loadReportFromCache() {
+    const cached = getAllEmailAnalysisResults();
+    if (cached.length > 0) {
+        reportResults = cached.map(applyStoredActualLabel).slice(0, MAX_EMAILS_TO_SHOW);
+        localStorage.setItem('emailAnalysisResults', JSON.stringify(reportResults));
+        regenerateSnapshot(reportResults);
+        syncRecentAnalysisFromResults(reportResults);
+        setSyncStatus('Live sync unavailable, showing saved results.');
+        latestScannedCount = cached.length;
+        refreshAnalysis();
+        runEvaluation();
+    } else {
+        reportResults = [];
+        setSyncStatus('Unable to sync email scan results. No saved data available.');
+        refreshAnalysis();
     }
+    reportLoading = false;
 }
 
 function handleReportResults(data) {

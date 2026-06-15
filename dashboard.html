@@ -537,8 +537,15 @@ function openTransaction() {
 }
 
 // 🧠 GLOBAL ACTIVITY LOGGER
+function getSessionUserId() {
+    return sessionStorage.getItem('secureTraceUserId') || localStorage.getItem('secureTraceUserId') || 'guest';
+}
+function getActivityLogKey() {
+    return `activityLogs_${getSessionUserId()}`;
+}
 function logActivity(message) {
-    const logs = JSON.parse(localStorage.getItem("activityLogs")) || [];
+    const key = getActivityLogKey();
+    const logs = JSON.parse(localStorage.getItem(key)) || [];
 
     logs.unshift({
         message: message,
@@ -547,7 +554,7 @@ function logActivity(message) {
 
     if (logs.length > 100) logs.pop();
 
-    localStorage.setItem("activityLogs", JSON.stringify(logs));
+    localStorage.setItem(key, JSON.stringify(logs));
 }
 
 function initActivityTracking() {
