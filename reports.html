@@ -247,34 +247,44 @@ body { display: flex; background: #f5f7fb; min-height: 100vh; }
 <body>
 
 <!-- PDF EXPORT (hidden) -->
-<div id="pdfReport" style="display:none; padding:40px; font-family: Arial, sans-serif;">
+<div id="pdfReport" style="display:none; padding:40px; font-family: Arial, sans-serif; width:750px; max-width:750px;">
     <h1 style="text-align:center; margin-bottom:16px;">SecureTrace Security Report</h1>
     <p style="text-align:center; color:#555; margin-bottom:28px;">Generated: <span id="reportDate"></span></p>
     <hr style="margin-bottom:24px;">
-    <h2 style="margin-bottom:10px;">Summary</h2>
-    <ul style="line-height:2; margin-bottom:24px;">
-        <li><strong>Emails Analyzed:</strong> <span id="pdfEmails">0</span></li>
-        <li><strong>Safe Emails:</strong> <span id="pdfSafe">0</span></li>
-    </ul>
+    <div style="page-break-inside:avoid;">
+        <h2 style="margin-bottom:10px;">Summary</h2>
+        <ul style="line-height:2; margin-bottom:24px;">
+            <li><strong>Emails Analyzed:</strong> <span id="pdfEmails">0</span></li>
+            <li><strong>Safe Emails:</strong> <span id="pdfSafe">0</span></li>
+        </ul>
+    </div>
     <hr style="margin-bottom:24px;">
-    <h2 style="margin-bottom:10px;">Threat Distribution</h2>
-    <canvas id="pdfPie" style="max-width:440px; margin-bottom:24px;"></canvas>
+    <div style="page-break-inside:avoid;">
+        <h2 style="margin-bottom:10px;">Threat Distribution</h2>
+        <canvas id="pdfPie" style="max-width:440px; margin-bottom:24px;"></canvas>
+    </div>
     <hr style="margin-bottom:24px;">
-    <h2 style="margin-bottom:10px;">Email Analysis Trend</h2>
-    <canvas id="pdfBar" style="max-width:440px; margin-bottom:24px;"></canvas>
+    <div style="page-break-inside:avoid;">
+        <h2 style="margin-bottom:10px;">Email Analysis Trend</h2>
+        <canvas id="pdfBar" style="max-width:440px; margin-bottom:24px;"></canvas>
+    </div>
     <hr style="margin-bottom:24px;">
-    <h2 style="margin-bottom:10px;">Recent Analysis</h2>
-    <table border="1" cellspacing="0" cellpadding="8" width="100%">
-        <thead><tr><th>Date</th><th>Sender</th><th>Subject</th><th>Status</th></tr></thead>
-        <tbody id="pdfAnalysisTableBody"></tbody>
-    </table>
+    <div style="page-break-inside:avoid;">
+        <h2 style="margin-bottom:10px;">Recent Analysis</h2>
+        <table border="1" cellspacing="0" cellpadding="8" width="100%" style="page-break-inside:avoid; border-collapse:collapse;">
+            <thead><tr><th>Date</th><th>Sender</th><th>Subject</th><th>Status</th></tr></thead>
+            <tbody id="pdfAnalysisTableBody"></tbody>
+        </table>
+    </div>
 </div>
 
 <!-- Sidebar -->
 <div class="sidebar">
     <div class="sidebar-header">
-        <i data-lucide="shield"></i>
-        <strong>SecureTrace</strong>
+        <a href="index.html" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:10px;">
+            <i data-lucide="shield"></i>
+            <strong>SecureTrace</strong>
+        </a>
     </div>
     <div class="menu">
         <a href="dashboard.html"><i data-lucide="home"></i> Dashboard</a>
@@ -563,8 +573,28 @@ function resetLabelStore() {
     localStorage.removeItem('evalLabelSnapshot');
     localStorage.removeItem('evalPredSnapshot');
 
+    /* Clear actualLabel from securetrace_snapshot so snapLabelMap (the first
+       source checked in runEvaluation) also returns empty after reset.
+       Without this, the snapshot's actualLabel entries survive the reset and
+       the full TP/FP/TN/FN evaluation keeps running even with no labels. */
+    try {
+        const snap = JSON.parse(localStorage.getItem('securetrace_snapshot') || 'null');
+        if (snap && Array.isArray(snap.emails)) {
+            snap.emails = snap.emails.map(e => {
+                const s = { ...e };
+                delete s.actualLabel;
+                return s;
+            });
+            localStorage.setItem('securetrace_snapshot', JSON.stringify(snap));
+        }
+    } catch(e) { console.warn('[RESET] Could not clear snapshot actualLabels:', e); }
+
     localStorage.setItem('_labelStoreVersion', String(LABEL_STORE_VERSION));
     console.log('[SECURETRACE] Label store + eval snapshots manually reset.');
+
+    /* Cancel any pending _waitAndEval polling — prevents it from re-showing
+       eval metrics after we clear them here */
+    localStorage.removeItem('autoRunEval');
 
     /* Clear eval UI panels immediately — no page refresh needed */
     const _es = document.getElementById('evalSummary');
@@ -821,7 +851,7 @@ function getDisplayStatus(email) {
     const rawCat = String(getEmailField(email, ['Category_Label','Category Label','Prediction_Label','Prediction Label','Category','Prediction','Predicted_Label','Predicted']) || '').toLowerCase();
     if (rawCat.includes('potential')) return 'Potential Phishing';
     if (rawCat.includes('phish'))     return 'Phishing';
-    if (rawCat.length > 0)            return rawCat.includes('safe') || rawCat.includes('legit') || rawCat.includes('ham') ? 'Safe' : null;
+    if (rawCat.length > 0)            return rawCat.includes('safe') || rawCat.includes('legit') || rawCat.includes('ham') ? 'Safe' : 'Safe';
     /* Fall back to stored _category when raw fields give no clear signal */
     const cat = email._category;
     if (cat === 'PHISHING') return 'Phishing';
@@ -905,11 +935,32 @@ function cleanRecentAnalysisRecords(records) {
         if (seen.has(key)) return false; seen.add(key); return true;
     }).slice(0,10);
 }
+
+/* getModelPredictionStatus: returns the MODEL's prediction for an email,
+   exactly as shown in the Email Results page — never the user's actual label.
+   The user's actual label is only for evaluation metrics (TP/FP/TN/FN);
+   it should NOT change what status is displayed in the recent analysis table. */
+function getModelPredictionStatus(email) {
+    /* 1. _category stamped by email-results.html at scan time — most reliable */
+    if (email._category === 'PHISHING')          return 'Phishing';
+    if (email._category === 'POTENTIAL_PHISHING') return 'Potential Phishing';
+    if (email._category === 'SAFE')               return 'Safe';
+    /* 2. Raw Category/Prediction fields from the backend */
+    const rawCat = String(getEmailField(email, [
+        'Category_Label','Category Label','Prediction_Label','Prediction Label',
+        'Category','Prediction','Predicted_Label','Predicted'
+    ]) || '').toLowerCase();
+    if (rawCat.includes('potential')) return 'Potential Phishing';
+    if (rawCat.includes('phish'))     return 'Phishing';
+    if (rawCat.length > 0)            return 'Safe';
+    return 'Safe';
+}
+
 function buildRecentAnalysisFromEmailResults() {
     /* Always read live from emailAnalysisResults so the table matches exactly
-       what the user analyzed — no stale snapshot, no hardcoded fallbacks.
-       getDisplayStatus() reads Category_Label directly (same source as the
-       Email Results page) so statuses are always consistent. */
+       what the user analyzed. Use getModelPredictionStatus() — NOT the user's
+       actual label — so this table always shows the model's classification,
+       identical to what was displayed in the Email Results page. */
     const all = getAllEmailAnalysisResults().filter(r => r && typeof r === 'object');
     if (all.length === 0) return [];
     const hasTimestamps = all.some(r => getRecordTime(r) > 0);
@@ -921,14 +972,11 @@ function buildRecentAnalysisFromEmailResults() {
             date:    getEmailField(email, ['Date', 'date', 'Email Date', 'Created At']) || '-',
             sender:  getEmailField(email, ['From', 'Sender', 'Email From', 'from']) || '-',
             subject: getEmailField(email, ['Subject', 'Email Subject', 'subject']) || '-',
-            status:  getDisplayStatus(email)
+            status:  getModelPredictionStatus(email)
         }))
     );
 }
 function getRecentAnalysis() {
-    /* Always rebuild from emailAnalysisResults using getDisplayStatus() so
-       the status column always reflects Actual_Label, never stale cached
-       model-prediction statuses that might be sitting in localStorage. */
     const fresh = buildRecentAnalysisFromEmailResults();
     if (fresh.length > 0) { saveRecentAnalysis(fresh); return fresh; }
     /* Fallback: nothing in emailAnalysisResults yet — use the saved cache */
@@ -949,7 +997,7 @@ function syncRecentAnalysisFromResults(results) {
                 date:    getEmailField(email,['Date','Email Date','date'])||'-',
                 sender:  getEmailField(email,['From','Sender','Email From','from'])||'-',
                 subject: getEmailField(email,['Subject','Email Subject','subject'])||'-',
-                status:  getDisplayStatus(email)
+                status:  getModelPredictionStatus(email)
             }))
     ));
 }
@@ -1107,16 +1155,29 @@ async function loadReportResults() {
 function handleReportResults(data) {
     const raw = extractEmailResults(data);
 
-    /* ── Preserve _category from the old records before overwriting.
-       email-results.html stamps _category = normalizeCategory(email) at
-       save-time, which is the authoritative model prediction.  A live sync
-       brings fresh records with NO _category.  Without this step, every
-       sync wipes the predictions and makes TP/FP go to 0.
+    /* ── Preserve _category from the authoritative sources before overwriting.
+       Priority (highest → lowest):
+         0. securetrace_snapshot (written by email-results.html at scan time — most reliable)
+         1. Old cached emailAnalysisResults records  (exact key or subject match)
+         2. Raw Category/Prediction field from the fresh backend record
+         3. Named-field fallback (Category_Label etc.)
 
-       Build two lookup maps from the OLD cached records:
-         keyCategoryMap  : key  → _category  (exact-key match)
-         subjCategoryMap : subj → _category  (subject fuzzy match)
+       A live sync brings fresh records with NO _category. Without restoration,
+       every sync wipes predictions and makes TP/FP go to 0.
     ── */
+
+    /* 0. Authoritative snapshot from email-results.html — captured BEFORE this
+          sync call so it is not yet contaminated by regenerateSnapshot(). */
+    const existingSnap     = getSnapshot();
+    const snapCategoryMap  = {};
+    if (existingSnap && Array.isArray(existingSnap.emails)) {
+        existingSnap.emails.forEach(s => {
+            const subj = String(s.subject || '').trim().toLowerCase();
+            if (subj && subj !== '-' && s.category) snapCategoryMap[subj] = s.category;
+        });
+    }
+
+    /* 1. Build lookup maps from the old cached records */
     const oldRecords = getAllEmailAnalysisResults();
     const keyCategoryMap  = {};
     const subjCategoryMap = {};
@@ -1137,19 +1198,22 @@ function handleReportResults(data) {
         if (withLabel._category) return withLabel;   // already set (e.g. second sync)
 
         let cat = null;
+        const emailSubj = String(getEmailField(withLabel, ['Subject','Email Subject'])||'').trim().toLowerCase();
 
-        /* 1. Exact key match */
-        for (const k of getEmailKeys(withLabel)) {
-            if (keyCategoryMap[k]) { cat = keyCategoryMap[k]; break; }
-        }
+        /* 0. Authoritative: existing snapshot from email-results.html */
+        if (!cat && emailSubj && snapCategoryMap[emailSubj]) cat = snapCategoryMap[emailSubj];
 
-        /* 2. Subject fuzzy match */
+        /* 1a. Exact key match from old records */
         if (!cat) {
-            const subj = String(getEmailField(withLabel, ['Subject','Email Subject'])||'').trim().toLowerCase();
-            if (subj && subjCategoryMap[subj]) cat = subjCategoryMap[subj];
+            for (const k of getEmailKeys(withLabel)) {
+                if (keyCategoryMap[k]) { cat = keyCategoryMap[k]; break; }
+            }
         }
 
-        /* 3a. Direct mapping from raw Category/Prediction field value
+        /* 1b. Subject fuzzy match from old records */
+        if (!cat && emailSubj && subjCategoryMap[emailSubj]) cat = subjCategoryMap[emailSubj];
+
+        /* 2. Direct mapping from raw Category/Prediction field value
               (catches ML outputs like "1", "High Risk", "Phishing Detected"
                that derivePrediction's keyword scan misses) */
         if (!cat) {
@@ -1161,7 +1225,7 @@ function handleReportResults(data) {
             cat = normalizeCategoryValue(rawVal);
         }
 
-        /* 3b. Simple named-field fallback — same logic as email-results.html's
+        /* 3. Simple named-field fallback — same logic as email-results.html's
               normalizeCategory. Never use derivePrediction here because its
               broad keyword scan (risk=medium → POTENTIAL_PHISHING, etc.) gives
               false positives that contradict what the user sees on the results page. */
@@ -1214,8 +1278,13 @@ function downloadPDF() {
     const pdfBody=document.getElementById('pdfAnalysisTableBody'), records=getRecentAnalysis();
     pdfBody.innerHTML=records.length===0?'<tr><td colspan="4">No recent analysis yet</td></tr>':records.slice(0,10).map(r=>`<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.sender)}</td><td>${escapeHtml(r.subject)}</td><td>${escapeHtml(r.status)}</td></tr>`).join('');
     setTimeout(()=>{
-        html2pdf().set({margin:0.5,filename:'SecureTrace_Report.pdf',html2canvas:{scale:3},jsPDF:{unit:'in',format:'a4',orientation:'portrait'}})
-            .from(pdf).save().then(()=>{ pdf.style.display='none'; destroyPdfCharts(); });
+        html2pdf().set({
+            margin: [0.5, 0.5, 0.5, 0.5],
+            filename: 'SecureTrace_Report.pdf',
+            html2canvas: { scale: 2, useCORS: true, logging: false },
+            jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
+            pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+        }).from(pdf).save().then(()=>{ pdf.style.display='none'; destroyPdfCharts(); });
     },800);
 }
 
@@ -1426,20 +1495,39 @@ function runEvaluation() {
     const labelSnap = JSON.parse(localStorage.getItem('evalLabelSnapshot') || '{}');
     const predSnap  = JSON.parse(localStorage.getItem('evalPredSnapshot')  || '{}');
 
-    console.log(`[EVAL] labelSnap size=${Object.keys(labelSnap).length} | predSnap size=${Object.keys(predSnap).length}`);
-    if (Object.keys(labelSnap).length === 0) {
+    /* ── Load securetrace_snapshot (authoritative — written by email-results.html).
+       This is the most reliable source for both model predictions and user labels
+       because email-results.html stamps _category directly from the ML model output
+       and actualLabel from the user's dropdown at the time they viewed results. ── */
+    const snapData     = getSnapshot();
+    const snapPredMap  = {};
+    const snapLabelMap = {};
+    if (snapData && Array.isArray(snapData.emails)) {
+        snapData.emails.forEach(s => {
+            const subj = String(s.subject || '').trim().toLowerCase();
+            if (!subj) return;
+            if (s.category)     snapPredMap[subj]  = s.category;
+            if (s.actualLabel)  snapLabelMap[subj]  = s.actualLabel;
+        });
+    }
+
+    console.log(`[EVAL] labelSnap size=${Object.keys(labelSnap).length} | predSnap size=${Object.keys(predSnap).length} | snapPred size=${Object.keys(snapPredMap).length} | snapLabel size=${Object.keys(snapLabelMap).length}`);
+    if (Object.keys(labelSnap).length === 0 && Object.keys(snapLabelMap).length === 0) {
         console.warn('[EVAL] evalLabelSnapshot is empty — labels may not have been captured yet. Navigate to Email Results and back to refresh.');
     }
 
     /* ── Step 2: Resolve the model prediction for every email.
        Priority:
-         1. Raw Category/Prediction field from the record — the ML model's
-            direct output. normalizeCategoryValue handles non-keyword formats
-            like "1", "High Risk", "Phishing Detected" that the keyword scan
-            misses.
-         2. _category on the record (preserved by handleReportResults)
-         3. evalPredSnapshot[subject] — captured before live sync
-         4. derivePrediction          — keyword-scan field fallback
+         1. _category on the record — restored by handleReportResults() from the
+            email-results.html snapshot as its highest-priority source. Most reliable
+            after a live sync because handleReportResults now reads the snapshot first.
+         2. Raw Category/Prediction field from the backend record — direct ML output.
+            normalizeCategoryValue handles non-keyword formats like "1", "High Risk".
+         3. securetrace_snapshot.category — from the current snapshot (rebuilt from
+            correctly restored records; good cross-check).
+         4. evalPredSnapshot[subject] — captured at page load before any live sync;
+            may be from a previous session but better than keyword scan.
+         5. derivePrediction          — broad keyword-scan fallback (last resort).
     ── */
     const withFreshPred = rawResults.map(email => {
         const subj = String(getEmailField(email, ['Subject','Email Subject']) || '').trim().toLowerCase();
@@ -1448,38 +1536,44 @@ function runEvaluation() {
             'Predicted','Category_Name','CategoryName','Category_Label',
             'category_label','Result','Classification'
         ]);
-        const pred = normalizeCategoryValue(rawCatField)
-                  || email._category
-                  || predSnap[subj]
+        const pred = email._category
+                  || normalizeCategoryValue(rawCatField)
+                  || (subj && snapPredMap[subj])
+                  || (subj && predSnap[subj])
                   || derivePrediction(email);
         return { ...email, _predCategory: pred };
     });
 
     /* ── Step 3: Resolve actual labels.
        Priority:
-         1. Actual_Label already on the record
-         2. evalLabelSnapshot[subject] — captured before live sync (most reliable)
-         3. actualEmailLabels key match (msgid / date|sender|subject)
+         1. securetrace_snapshot.actualLabel — set by the user in email-results.html,
+            most reliable across page navigations.
+         2. Actual_Label already on the record
+         3. evalLabelSnapshot[subject] — captured before live sync (most reliable)
+         4. actualEmailLabels key match (msgid / date|sender|subject)
     ── */
     const userLabels = getActualLabels();
 
     const withActual = withFreshPred.map(email => {
         const subj = String(getEmailField(email, ['Subject','Email Subject']) || '').trim().toLowerCase();
 
-        /* 1. Already stamped on the record */
-        let actual = normalizeActualLabel(email.Actual_Label || email.actual_label || email.Label || '');
+        /* 1. Authoritative snapshot label (set by user in email-results.html) */
+        let actual = subj ? normalizeActualLabel(snapLabelMap[subj] || '') : '';
 
-        /* 2. Pre-sync snapshot — subject-keyed, survives live sync overwrites */
+        /* 2. Already stamped on the record */
+        if (!actual) actual = normalizeActualLabel(email.Actual_Label || email.actual_label || email.Label || '');
+
+        /* 3. Pre-sync snapshot — subject-keyed, survives live sync overwrites */
         if (!actual && subj && labelSnap[subj]) actual = labelSnap[subj];
 
-        /* 3. actualEmailLabels strict key match (msgid / date|sender|subject) */
+        /* 4. actualEmailLabels strict key match (msgid / date|sender|subject) */
         if (!actual) {
             for (const key of getEmailKeys(email)) {
                 if (userLabels[key]) { actual = userLabels[key]; break; }
             }
         }
 
-        /* 4. Subject-based scan of actualEmailLabels — catches labels stored
+        /* 5. Subject-based scan of actualEmailLabels — catches labels stored
               under date|sender|subject keys when getEmailKeys() generates a
               different date or sender format on the fresh record. */
         if (!actual && subj && subj.length >= 2) {

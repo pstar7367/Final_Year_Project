@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -285,9 +285,12 @@ function getEmailDedupKey(email) {
 function dedupeEmails(emails) {
     const seen = new Set();
     return (Array.isArray(emails) ? emails : []).filter((email, idx) => {
-        /* Use index as fallback so an email with an empty/missing key is
-           never silently dropped — it gets a unique key of its own. */
-        const key = getEmailDedupKey(email) || `__idx_${idx}__`;
+        /* Only deduplicate when a stable Message-ID is present.
+           date|sender|subject keys are NOT used for dedup because multiple
+           legitimate emails can share the same sender+subject on the same day,
+           which caused the count to drop from 50 → 48/49. */
+        const key = getEmailDedupKey(email);
+        if (!key || !key.startsWith('msgid:')) return true;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
