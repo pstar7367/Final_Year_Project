@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -227,11 +227,6 @@ tr {
             Refresh
         </button>
 
-        <button onclick="triggerScan()" id="scanBtn">
-            <i data-lucide="scan-search"></i>
-            Scan for New
-        </button>
-
         <button onclick="goReports()">
             <i data-lucide="bar-chart"></i>
             Go to Reports
@@ -239,10 +234,6 @@ tr {
     </div>
 </div>
 
-<div id="scanStatusBar" style="display:none;background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:10px 16px;margin-bottom:14px;color:#664d00;font-size:14px;align-items:center;gap:10px;">
-    <i data-lucide="loader-circle" style="animation:spin 1s linear infinite;width:16px;height:16px;flex-shrink:0;"></i>
-    <span id="scanStatusText">Scanning for new emails…</span>
-</div>
 <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>
 
 <div class="card">
@@ -831,7 +822,6 @@ function saveEmailSessionTiming(timing) {
 // returned data. The 30-second JSONP timeout fired before the slow scan
 // finished, falling back to stale localStorage. Now we call getResults first
 // (fast — reads the sheet directly) so fresh data appears immediately.
-// The scan runs separately via triggerScan() / "Scan for New" button.
 function loadResults() {
     if (loading) return;
     loading = true;
@@ -883,84 +873,6 @@ function loadResults() {
     }, 30000);
 
     document.body.appendChild(script);
-}
-
-// 🔍 TRIGGER SCAN — Phase 2: run the Gmail+Gemini scan in the background.
-// Separated from loadResults so the page always shows data immediately.
-// Scans can take several minutes (Gemini rate-limits 6s/call × many emails).
-let scanInProgress = false;
-function triggerScan() {
-    if (scanInProgress) {
-        console.log('[SCAN] Scan already in progress, ignoring.');
-        return;
-    }
-    scanInProgress = true;
-
-    const statusBar = document.getElementById('scanStatusBar');
-    const statusText = document.getElementById('scanStatusText');
-    const scanBtn = document.getElementById('scanBtn');
-
-    if (statusBar) { statusBar.style.display = 'flex'; }
-    if (statusText) statusText.textContent = 'Scanning for new emails… this may take 1–2 minutes.';
-    if (scanBtn) scanBtn.disabled = true;
-
-    logActivity("Triggered background email scan");
-
-    const oldScanScript = document.getElementById("scanScript");
-    if (oldScanScript) oldScanScript.remove();
-
-    const script = document.createElement("script");
-    script.id = "scanScript";
-    script.src = SCRIPT_URL + "?action=runScan&callback=handleScanDone&t=" + Date.now();
-
-    script.onerror = function () {
-        scanInProgress = false;
-        if (statusBar) statusBar.style.display = 'none';
-        if (scanBtn) scanBtn.disabled = false;
-        console.log('[SCAN] Scan JSONP call failed');
-        logActivity("Scan failed — network error");
-    };
-
-    // Allow up to 6 minutes (GAS execution limit). Clear on success.
-    window._scanTimeoutRef = setTimeout(() => {
-        const s = document.getElementById("scanScript");
-        if (s) s.remove();
-        scanInProgress = false;
-        if (statusBar) statusBar.style.display = 'none';
-        if (scanBtn) scanBtn.disabled = false;
-        console.log('[SCAN] Scan timed out after 6 min');
-        logActivity("Scan timed out — some results may be saved");
-        loadResults(); // refresh to show any emails saved before timeout
-    }, 360000);
-
-    document.body.appendChild(script);
-}
-
-// Called by JSONP when runScan completes.
-function handleScanDone(data) {
-    clearTimeout(window._scanTimeoutRef);
-    scanInProgress = false;
-
-    const statusBar = document.getElementById('scanStatusBar');
-    const statusText = document.getElementById('scanStatusText');
-    const scanBtn = document.getElementById('scanBtn');
-    if (scanBtn) scanBtn.disabled = false;
-
-    const scanned = data && data.scanned != null ? data.scanned : 0;
-
-    if (scanned > 0) {
-        if (statusText) statusText.textContent = `Scan complete — ${scanned} new email(s) found. Refreshing…`;
-        logActivity(`Scan complete: ${scanned} new email(s) found`);
-        setTimeout(() => {
-            if (statusBar) statusBar.style.display = 'none';
-            loadResults();
-        }, 1500);
-    } else {
-        if (statusText) statusText.textContent = 'Scan complete — no new emails.';
-        setTimeout(() => { if (statusBar) statusBar.style.display = 'none'; }, 3000);
-        logActivity("Scan complete: no new emails");
-    }
-    console.log('[SCAN] handleScanDone:', data);
 }
 
 /* ── Strips any Actual_Label that came from the backend (not from the
@@ -1027,7 +939,6 @@ function loadCachedOrTestData() {
     console.log('[CACHE] No cached data found, showing error');
     showError("Failed to load email results. Check your connection or use cached data.");
 }
-
 
 // ✅ HANDLE DATA
 function handleData(data) {
@@ -1247,7 +1158,6 @@ function showError(message) {
     loading = false;
 }
 
-
 // 🌐 GO TO LIVE REPORTS
 function persistCurrentLabels() {
     // Rebuild the label map fresh from every email in currentResults that has a label.
@@ -1300,12 +1210,11 @@ initActivityTracking();
 logActivity("Visited email results page");
 resetProjectCountsOnce();
 loadResults();
-// Auto-trigger scan after a short delay so the results table appears first.
-setTimeout(() => triggerScan(), 3000);
 
 /* Auto-persist labels whenever the user leaves the page — even if they
    navigate directly instead of using the "Go to Reports" button. */
 window.addEventListener('beforeunload', persistCurrentLabels);
+
 </script>
 
 </body>
